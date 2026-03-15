@@ -288,6 +288,17 @@ Built with TypeScript, Turborepo, pnpm workspaces, Biome, and Vitest.
 
 ---
 
+## Getting Paid
+
+OpenAgentPay is not a payment processor — it's middleware. See the **[Getting Paid Guide](./docs/getting-paid.md)** for the complete walkthrough of how API owners collect payments, including:
+
+- How USDC reaches your wallet via x402 (direct on-chain settlement, facilitator pays gas)
+- Wallet setup options (Coinbase, self-custodial, multisig, hardware)
+- Converting USDC to fiat (Coinbase, Circle Mint, Stripe)
+- Transaction costs ($0.001-$0.002 per micropayment vs. $0.30+ on traditional rails)
+- Credits system (prepaid balances, you hold the funds)
+- Tax/accounting guidance and regulatory FAQ
+
 ## Specifications
 
 - [402 Response Format](./specs/402-response.md) — the machine-readable pricing schema agents parse

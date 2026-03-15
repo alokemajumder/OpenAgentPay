@@ -1,0 +1,45 @@
+{
+  "name": "@openagentpay/adapter-mock",
+  "version": "0.1.0",
+  "description": "Mock payment adapter for OpenAgentPay — simulate the full payment flow without real money",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "openagentpay",
+    "payment",
+    "mock",
+    "testing",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAgentPay/OpenAgentPay",
+    "directory": "packages/adapter-mock"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

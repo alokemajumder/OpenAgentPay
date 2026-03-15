@@ -1,0 +1,53 @@
+{
+  "name": "@openagentpay/mcp",
+  "version": "0.1.0",
+  "description": "MCP (Model Context Protocol) integration for OpenAgentPay — paid MCP tools with per-invocation charging",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-agents",
+    "payments",
+    "mcp",
+    "model-context-protocol",
+    "paid-tools",
+    "402",
+    "x402",
+    "usdc",
+    "micropayments"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagentpay/openagentpay",
+    "directory": "packages/mcp"
+  }
+}

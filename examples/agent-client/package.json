@@ -1,0 +1,20 @@
+{
+  "name": "@openagentpay/example-agent-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example: AI agent that discovers, evaluates, and pays for API calls using OpenAgentPay",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agent.ts"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*",
+    "@openagentpay/client": "workspace:*",
+    "@openagentpay/policy": "workspace:*",
+    "@openagentpay/adapter-mock": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

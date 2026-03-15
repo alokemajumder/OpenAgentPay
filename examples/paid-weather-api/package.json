@@ -1,0 +1,22 @@
+{
+  "name": "@openagentpay/example-paid-weather-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example: Express weather API with per-request pricing via OpenAgentPay",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*",
+    "@openagentpay/server-express": "workspace:*",
+    "@openagentpay/adapter-mock": "workspace:*",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/express": "4.17.21",
+    "typescript": "^5.0.0"
+  }
+}

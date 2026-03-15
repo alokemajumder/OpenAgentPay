@@ -1,0 +1,66 @@
+{
+  "name": "@openagentpay/core",
+  "version": "0.1.0",
+  "description": "Core types, builders, parsers, and utilities for OpenAgentPay — the payment infrastructure for AI agents",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./builders": {
+      "types": "./dist/builders/index.d.ts",
+      "import": "./dist/builders/index.js"
+    },
+    "./parsers": {
+      "types": "./dist/parsers/index.d.ts",
+      "import": "./dist/parsers/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src/",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-agents",
+    "payments",
+    "402",
+    "x402",
+    "stablecoins",
+    "usdc",
+    "micropayments",
+    "mcp",
+    "receipts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagentpay/openagentpay",
+    "directory": "packages/core"
+  }
+}

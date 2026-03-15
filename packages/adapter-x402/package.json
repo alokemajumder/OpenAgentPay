@@ -1,0 +1,48 @@
+{
+  "name": "@openagentpay/adapter-x402",
+  "version": "0.1.0",
+  "description": "x402 stablecoin payment adapter for OpenAgentPay — real USDC payments on Base via EIP-3009",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "openagentpay",
+    "payment",
+    "x402",
+    "usdc",
+    "stablecoin",
+    "base",
+    "eip-3009",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAgentPay/OpenAgentPay",
+    "directory": "packages/adapter-x402"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

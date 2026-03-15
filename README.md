@@ -290,7 +290,15 @@ Built with TypeScript, Turborepo, pnpm workspaces, Biome, and Vitest.
 
 ## Getting Paid
 
-OpenAgentPay is not a payment processor — it's middleware. See the **[Getting Paid Guide](./docs/getting-paid.md)** for the complete walkthrough of how API owners collect payments, including:
+OpenAgentPay is not a payment processor — it's middleware. Adapters handle the actual money movement.
+
+### Fiat Rails: Stripe, PayPal, UPI
+
+See the **[Fiat Payment Methods Guide](./docs/fiat-payment-methods.md)** for how API owners can charge agents using traditional payment rails. Key insight: **per-call charging is uneconomical on fiat rails** (Stripe minimum $0.50, fees destroy margins). Instead, aggregate usage into periodic charges or use prepaid credits. UPI (India) is near-zero cost.
+
+### Crypto Rails: USDC on Base
+
+See the **[Getting Paid Guide](./docs/getting-paid.md)** for the complete walkthrough of how API owners collect payments via x402, including:
 
 - How USDC reaches your wallet via x402 (direct on-chain settlement, facilitator pays gas)
 - Wallet setup options (Coinbase, self-custodial, multisig, hardware)

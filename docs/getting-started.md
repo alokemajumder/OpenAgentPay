@@ -1,35 +1,32 @@
-# Getting Started with OpenAgentPay
+# Getting Started
 
 ## Prerequisites
 
 - Node.js 20+
-- pnpm (recommended) or npm
+- pnpm
 
-## Installation
+## Install what you need
 
 ```bash
-# Server-side (API provider)
+# If you're an API provider accepting agent payments
 pnpm add @openagentpay/server-express @openagentpay/adapter-mock @openagentpay/core
 
-# Client-side (AI agent)
+# If you're building an agent that pays for APIs
 pnpm add @openagentpay/client @openagentpay/adapter-mock @openagentpay/core
 
-# For real payments
-pnpm add @openagentpay/adapter-x402
-
-# For prepaid credits
-pnpm add @openagentpay/adapter-credits
-
-# For MCP tools
-pnpm add @openagentpay/mcp
-
-# For Hono (instead of Express)
-pnpm add @openagentpay/server-hono
+# Additional adapters (pick what you need)
+pnpm add @openagentpay/adapter-x402       # real USDC payments on Base
+pnpm add @openagentpay/adapter-credits    # prepaid credit system
+pnpm add @openagentpay/policy             # standalone spend governance
+pnpm add @openagentpay/receipts           # receipt storage + query
+pnpm add @openagentpay/mcp               # paid MCP tools
+pnpm add @openagentpay/server-hono        # Hono instead of Express
+pnpm add @openagentpay/otel-exporter      # OpenTelemetry integration
 ```
 
-## Quick Start: Accept Agent Payments (Server)
+## Server side: accept payments
 
-### 1. Add paywall to your Express API
+### 1. Create a paywall
 
 ```typescript
 import express from 'express';
@@ -40,16 +37,20 @@ const app = express();
 app.use(express.json());
 
 const paywall = createPaywall({
-  recipient: '0x0000000000000000000000000000000000000000',
-  adapters: [mock()], // Use x402() for real payments
+  recipient: '0xYourWalletAddress',
+  adapters: [mock()],
 });
+```
 
-// One line to monetize any endpoint
+### 2. Add it to routes
+
+```typescript
+// Static price
 app.get('/api/search', paywall({ price: '0.01' }), (req, res) => {
-  res.json({ results: ['result1', 'result2'] });
+  res.json({ results: ['data1', 'data2'] });
 });
 
-// Dynamic pricing
+// Dynamic price — function receives the request
 app.post('/api/process', paywall((req) => ({
   price: (0.01 * req.body.pages).toFixed(3),
   description: `Process ${req.body.pages} pages`,
@@ -57,31 +58,25 @@ app.post('/api/process', paywall((req) => ({
   res.json({ processed: true });
 });
 
-// Free endpoint (no paywall)
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+// Free endpoint — no paywall
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
-app.listen(3000, () => {
-  console.log('Paid API running on http://localhost:3000');
-});
+app.listen(3000);
 ```
 
-### 2. Test it
+### 3. Test it
 
 ```bash
-# Without payment — gets 402
 curl http://localhost:3000/api/search
 # → 402 Payment Required
-# → { "type": "payment_required", "pricing": { "amount": "0.01" }, ... }
+# → { "type": "payment_required", "pricing": { "amount": "0.01", "currency": "USDC", "unit": "per_request" }, "methods": [...] }
 
-# With mock payment — gets response
 curl -H "X-PAYMENT: mock:test123" http://localhost:3000/api/search
 # → 200 OK
-# → { "results": ["result1", "result2"] }
+# → { "results": ["data1", "data2"] }
 ```
 
-## Quick Start: Agent That Pays (Client)
+## Agent side: pay for APIs
 
 ```typescript
 import { withPayment } from '@openagentpay/client';
@@ -92,110 +87,44 @@ const paidFetch = withPayment(fetch, {
   policy: {
     maxPerRequest: '1.00',
     maxPerDay: '50.00',
-    allowedDomains: ['localhost', 'api.example.com'],
+    allowedDomains: ['localhost'],
   },
   onReceipt: (receipt) => {
     console.log(`Paid ${receipt.payment.amount} for ${receipt.request.url}`);
   },
 });
 
-// Use like normal fetch — payments happen automatically
 const response = await paidFetch('http://localhost:3000/api/search');
 const data = await response.json();
-console.log(data); // { results: ["result1", "result2"] }
 ```
 
-## Adding Subscriptions
+`withPayment` wraps native `fetch`. When a server returns 402, the wrapper parses the pricing, evaluates the policy, pays via the wallet adapter, retries the request with the payment proof in the `X-PAYMENT` header, and returns the final response. Your code just calls `paidFetch(url)`.
 
-### Server
+## Switching to real payments
+
+Replace `mock()` with `x402()` when you're ready for production:
 
 ```typescript
-const paywall = createPaywall({
-  recipient: '0x...',
-  adapters: [mock()],
-  subscriptions: {
-    plans: [
-      {
-        id: 'daily-unlimited',
-        amount: '5.00',
-        currency: 'USDC',
-        period: 'day',
-        calls: 'unlimited',
-      },
-    ],
-  },
-});
-
-// Register subscription management endpoints
-app.use(paywall.routes());
-// Creates: POST /openagentpay/subscribe
-//          GET  /openagentpay/subscription
-//          POST /openagentpay/unsubscribe
-```
-
-### Agent subscribes
-
-```bash
-# Subscribe
-curl -X POST http://localhost:3000/openagentpay/subscribe \
-  -H "Content-Type: application/json" \
-  -d '{"plan_id": "daily-unlimited", "payer_identifier": "agent-1"}'
-# → { "token": "abc-123", "expires_at": "...", "calls_remaining": "unlimited" }
-
-# Use subscription (no per-call payment needed)
-curl -H "X-SUBSCRIPTION: abc-123" http://localhost:3000/api/search
-# → 200 OK
-```
-
-## Real Payments (x402 / USDC)
-
-```typescript
-import { x402 } from '@openagentpay/adapter-x402';
-import { x402Wallet } from '@openagentpay/adapter-x402';
+import { x402, x402Wallet } from '@openagentpay/adapter-x402';
 
 // Server
 const paywall = createPaywall({
   recipient: '0xYourWalletAddress',
-  adapters: [x402({ network: 'base-sepolia' })],
+  adapters: [x402({ network: 'base-sepolia' })],  // testnet first
 });
 
 // Client
 const paidFetch = withPayment(fetch, {
-  wallet: x402Wallet({
-    privateKey: process.env.AGENT_WALLET_KEY,
-    network: 'base-sepolia',
-  }),
+  wallet: x402Wallet({ privateKey: process.env.AGENT_WALLET_KEY!, network: 'base-sepolia' }),
 });
 ```
 
-## Paid MCP Tools
+## Next steps
 
-```typescript
-import { paidTool, withMCPPayment } from '@openagentpay/mcp';
-import { mock } from '@openagentpay/adapter-mock';
-
-// Server: create a paid MCP tool
-const searchTool = paidTool({
-  price: '0.01',
-  currency: 'USDC',
-  adapters: [mock()],
-  recipient: '0x...',
-}, async (params) => {
-  return { results: await search(params.query) };
-});
-
-// Client: wrap MCP client to handle payments
-const client = withMCPPayment(mcpClient, {
-  wallet: mockWallet(),
-  policy: { maxPerCall: '0.10' },
-});
-```
-
-## Next Steps
-
-- [Concepts](./concepts.md) — understand the 402 flow, receipts, and policy engine
-- [Server SDK Guide](./server-sdk.md) — detailed server configuration
-- [Client SDK Guide](./client-sdk.md) — agent configuration and policy
+- [Concepts](./concepts.md) — the 402 flow, receipts, and policy engine explained
+- [Server SDK](./server-sdk.md) — subscriptions, events, multiple adapters
+- [Client SDK](./client-sdk.md) — policy configuration, spend tracking
 - [Payment Adapters](./payment-adapters.md) — mock, credits, x402
-- [Receipts](./receipts.md) — storage, query, and export
+- [Policy Engine](./policy-engine.md) — all 11 rules, domain matching, spend queries
+- [Receipts](./receipts.md) — storage, querying, CSV/JSON export
 - [MCP Integration](./mcp-integration.md) — paid MCP tools

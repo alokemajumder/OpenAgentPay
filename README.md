@@ -1,33 +1,26 @@
 # OpenAgentPay
 
-**Stripe for AI Agents — Open-Source Payment SDK**
+### The payment layer for the agentic internet.
 
-AI agents discover prices, pay per call, and get receipts. API providers earn instantly. No signup, no API keys, no invoices.
+Your AI agent just found the perfect API. It knows the endpoint, it knows what data it needs, and it's ready to call. But there's a paywall. And your agent can't pay.
+
+**OpenAgentPay fixes that.**
+
+One middleware line on the server. One wrapper on the client. The agent discovers the price, evaluates its budget, pays, gets the data, and moves on — all in milliseconds, all without a human touching anything.
+
+```
+Agent  →  GET /api/search?q=climate-data
+Server →  402 Payment Required  { amount: "0.01", currency: "USDC" }
+Agent  →  Policy check... approved. Paying.
+Agent  →  GET /api/search?q=climate-data  [X-PAYMENT: <proof>]
+Server →  200 OK  { results: [...] }  [receipt generated]
+```
 
 ---
 
-## The Problem
+## What you get in 3 minutes
 
-AI agents can't pay for things. Every paid API requires a human to create an account, manage API keys, and reconcile invoices. This doesn't scale when thousands of agents call thousands of APIs.
-
-## The Solution
-
-OpenAgentPay makes API payments as simple as HTTP:
-
-```
-Agent → GET /api/search?q=test
-Server → 402 Payment Required (machine-readable pricing)
-Agent → pays $0.01 USDC (or credits, or mock for testing)
-Server → 200 OK (response + receipt)
-```
-
-No signup. No API key. No subscription. Just pay and use.
-
----
-
-## Quick Start
-
-### Server: Accept Agent Payments (3 lines)
+### You run an API. You want agents to pay for it.
 
 ```typescript
 import express from 'express';
@@ -36,19 +29,20 @@ import { mock } from '@openagentpay/adapter-mock';
 
 const app = express();
 const paywall = createPaywall({
-  recipient: '0x0000000000000000000000000000000000000000',
-  adapters: [mock()],
+  recipient: '0xYourWallet',
+  adapters: [mock()],   // swap for x402() when you're ready for real USDC
 });
 
-// One line to monetize any endpoint
 app.get('/api/search', paywall({ price: '0.01' }), (req, res) => {
-  res.json({ results: ['result1', 'result2'] });
+  res.json({ results: ['satellite-data', 'ocean-temps', 'co2-levels'] });
 });
 
 app.listen(3000);
 ```
 
-### Client: Agent That Pays (3 lines)
+That's it. Your endpoint now returns `402 Payment Required` with machine-readable pricing. Any agent that speaks the OpenAgentPay protocol can pay and use it instantly.
+
+### You're building an agent. You want it to pay for APIs.
 
 ```typescript
 import { withPayment } from '@openagentpay/client';
@@ -56,212 +50,260 @@ import { mockWallet } from '@openagentpay/adapter-mock';
 
 const paidFetch = withPayment(fetch, {
   wallet: mockWallet(),
-  policy: { maxPerRequest: '1.00', maxPerDay: '50.00' },
+  policy: {
+    maxPerRequest: '1.00',
+    maxPerDay: '50.00',
+    allowedDomains: ['api.climate.dev', '*.research.org'],
+  },
+  onReceipt: (receipt) => {
+    console.log(`Paid ${receipt.payment.amount} for ${receipt.request.url}`);
+  },
 });
 
-// Identical to fetch — but handles 402 payments automatically
-const response = await paidFetch('http://localhost:3000/api/search?q=test');
-const data = await response.json();
-// Paid $0.01, got results, receipt stored
+// Your agent uses this exactly like fetch. Payments happen behind the scenes.
+const data = await paidFetch('https://api.climate.dev/search?q=ocean-temps').then(r => r.json());
 ```
 
-### What Happens
+The agent hits the endpoint, gets a 402 back, checks its policy engine ("Am I allowed to pay this domain? Is the amount within my budget?"), pays, retries, and returns the data. Your code never sees the payment dance.
+
+---
+
+## The full picture
+
+OpenAgentPay is 11 packages that cover the entire payment lifecycle:
+
+### Payment adapters — how money moves
+
+| Adapter | What happens | When to use |
+|---------|-------------|-------------|
+| `adapter-mock` | Every payment auto-succeeds. Wallet tracks a fake balance. | Development, testing, CI |
+| `adapter-credits` | Agent spends from a prepaid credit account. Atomic balance deductions. | Predictable budgets, no blockchain needed |
+| `adapter-x402` | Agent signs an EIP-3009 USDC authorization. Facilitator settles on Base L2. | Production. Real money. |
+
+### Server middleware — how APIs accept payment
+
+| Package | Framework | What it does |
+|---------|-----------|-------------|
+| `server-express` | Express 4+ | `paywall()` middleware. Static or dynamic pricing. Subscription management. Receipt generation. |
+| `server-hono` | Hono 4+ | Same API, adapted for Hono. `paywall()` returns Hono middleware. `routes()` returns a Hono app. |
+
+### Agent-side — how agents pay
+
+| Package | What it does |
+|---------|-------------|
+| `client` | Wraps `fetch` with `withPayment()`. Detects 402, parses pricing, checks policy, pays, retries. |
+| `policy` | Budget engine. 11 rule types. Domain globs. Rolling spend tracking. Approval thresholds. |
+
+### Infrastructure — what happens after payment
+
+| Package | What it does |
+|---------|-------------|
+| `core` | Every type, interface, schema, error class, builder, and parser. Zero dependencies. |
+| `receipts` | Store receipts in memory or on disk. Query by payer, date, method, amount. Export to CSV/JSON. |
+| `mcp` | Paid MCP tools. `paidTool()` wraps any tool handler. `withMCPPayment()` wraps any MCP client. |
+| `otel-exporter` | OpenTelemetry spans + metrics. `openagentpay.payments.count`, `.amount`, `.latency`. |
+
+---
+
+## Subscriptions — because per-call isn't always cheapest
+
+An agent calling your API 800 times a day at $0.01/call is spending $8. If you offer a $5/day unlimited plan, the agent should subscribe. OpenAgentPay makes this automatic.
+
+```typescript
+// Server: define plans
+const paywall = createPaywall({
+  recipient: '0x...',
+  adapters: [mock()],
+  subscriptions: {
+    plans: [
+      { id: 'daily-unlimited', amount: '5.00', currency: 'USDC', period: 'day', calls: 'unlimited' },
+      { id: 'daily-1000', amount: '2.50', currency: 'USDC', period: 'day', calls: 1000, rate_limit: 60 },
+    ],
+  },
+});
+
+app.use(paywall.routes());
+// → POST /openagentpay/subscribe
+// → GET  /openagentpay/subscription
+// → POST /openagentpay/unsubscribe
+```
+
+The 402 response includes subscription plans alongside per-call pricing. The agent compares costs and picks the cheapest option. Subscriptions use an `X-SUBSCRIPTION` token header — no per-call payment needed.
+
+---
+
+## Policy engine — agents don't spend blindly
+
+Every payment goes through the policy engine first. No exceptions.
+
+```typescript
+import { createPolicy } from '@openagentpay/policy';
+
+const policy = createPolicy({
+  maxPerRequest: '1.00',       // single call cap
+  maxPerDay: '50.00',          // 24h rolling budget
+  maxPerSession: '100.00',     // session lifetime budget
+  maxPerProvider: '10.00',     // per-domain daily cap
+  allowedDomains: ['*.trusted.dev', 'api.research.org'],
+  blockedDomains: ['*.sketchy.io'],
+  allowedCurrencies: ['USDC'],
+  approvalThreshold: '5.00',  // flag for human review above this
+  testMode: false,
+});
+
+const decision = policy.evaluate({ amount: '0.50', currency: 'USDC', domain: 'api.trusted.dev' });
+// → { outcome: 'approve', rules_evaluated: ['test_mode', 'blocked_domains', ...] }
+```
+
+11 rules, evaluated in strict order. `blockedDomains` is checked before `allowedDomains`. `approvalThreshold` is checked last. Domain patterns support `*` (single segment) and `**` (multi-segment).
+
+Spend tracking is built in. `policy.getDailyTotal()`, `policy.getSessionTotal()`, `policy.getProviderTotal(domain)` — all updated after each `policy.recordSpend()`.
+
+---
+
+## Receipts — every payment, accounted for
+
+```typescript
+import { createReceiptStore } from '@openagentpay/receipts';
+
+const store = createReceiptStore({ type: 'file', path: './data/receipts' });
+
+// Query
+const results = await store.query({ payer: '0x1234...', method: 'x402', limit: 50 });
+
+// Summarize
+const summary = await store.summary();
+// { totalCount: 1432, totalAmount: '14.32', byMethod: { x402: { count: 1200, amount: '12.00' } }, ... }
+
+// Export
+const csv = await store.export({ format: 'csv' });
+```
+
+Every receipt captures: who paid, what was requested, how much, which payment method, the on-chain transaction hash (for x402), response status code, response content hash, latency, and which policy rules were evaluated. The full schema is in [`specs/receipt.md`](./specs/receipt.md).
+
+---
+
+## Paid MCP tools — monetize any tool invocation
+
+```typescript
+// Server: wrap your MCP tool
+import { paidTool } from '@openagentpay/mcp';
+
+const search = paidTool({
+  price: '0.01', adapters: [mock()], recipient: '0x...',
+}, async (params: { query: string }) => {
+  return { results: await engine.search(params.query) };
+});
+
+// Client: your MCP client handles payment transparently
+import { withMCPPayment } from '@openagentpay/mcp';
+
+const client = withMCPPayment(mcpClient, {
+  wallet: mockWallet(),
+  policy: { maxPerCall: '0.10', maxPerDay: '5.00' },
+});
+
+const result = await client.callTool('search', { query: 'fusion energy' });
+// → Payment negotiated, verified, and settled. Receipt generated. Result returned.
+```
+
+Works with any MCP implementation. No SDK dependency. `withMCPPayment` proxies `callTool`, detects payment requirements in tool results, and handles the rest.
+
+---
+
+## Observability
+
+```typescript
+import { createPaymentTracer, createPaymentMetrics } from '@openagentpay/otel-exporter';
+
+const tracer = createPaymentTracer();
+const metrics = createPaymentMetrics();
+
+// Plug into any receipt callback
+paywall.on('payment:received', (receipt) => {
+  tracer.recordPayment(receipt);   // → OTel span with openagentpay.* attributes
+  metrics.recordPayment(receipt);  // → counters + latency histogram
+});
+```
+
+Requires `@opentelemetry/api` as a peer dependency. Bring your own SDK, exporters, and collector.
+
+---
+
+## Examples
 
 ```bash
-# Without payment
-curl http://localhost:3000/api/search?q=test
-# → 402 Payment Required
-# → { "type": "payment_required", "pricing": { "amount": "0.01", "currency": "USDC" }, ... }
+# Start the paid weather API
+cd examples/paid-weather-api && pnpm start
 
-# With payment
-curl -H "X-PAYMENT: mock:test123" http://localhost:3000/api/search?q=test
-# → 200 OK
-# → { "results": ["result1", "result2"] }
+# In another terminal — run the agent client
+cd examples/agent-client && pnpm start
+
+# Or run the self-contained end-to-end demo (starts its own server)
+cd examples/end-to-end-demo && pnpm start
 ```
+
+| Example | What it shows |
+|---------|--------------|
+| `paid-weather-api` | Express API with $0.005/call weather, $0.01/day dynamic forecast pricing, two subscription plans |
+| `agent-client` | Agent that auto-discovers pricing, pays with mock wallet, handles policy denials |
+| `end-to-end-demo` | Single script: starts server, gets 402, pays, subscribes, uses subscription, unsubscribes |
 
 ---
 
-## Packages
-
-| Package | Description | Status |
-|---------|-------------|--------|
-| [`@openagentpay/core`](./packages/core) | Types, schemas, builders | In Progress |
-| [`@openagentpay/adapter-mock`](./packages/adapter-mock) | Mock payments for testing | In Progress |
-| [`@openagentpay/server-express`](./packages/server-express) | Express paywall middleware | In Progress |
-| `@openagentpay/client` | Agent-side HTTP client with auto-402 | Planned |
-| `@openagentpay/policy` | Spend governance engine | Planned |
-| `@openagentpay/adapter-credits` | Prepaid credit system | Planned |
-| `@openagentpay/adapter-x402` | x402 stablecoin payments (USDC) | Planned |
-| `@openagentpay/receipts` | Receipt storage and query | Planned |
-| `@openagentpay/mcp` | Paid MCP tool adapter | Planned |
-| `@openagentpay/server-hono` | Hono paywall middleware | Planned |
-
----
-
-## Features
-
-### For API Providers
-- **One-line paywall** — add `paywall({ price: '0.01' })` to any route
-- **Dynamic pricing** — price as a function of the request
-- **Subscriptions** — hourly, daily, monthly plans with auto-renewal
-- **Multiple payment methods** — x402 (stablecoin), credits, mock (testing)
-- **Automatic receipts** — every payment generates a structured receipt
-- **Instant settlement** — get paid in USDC, no waiting for invoices
-
-### For AI Agents
-- **Auto-discovery** — parse 402 responses to learn pricing
-- **Auto-payment** — transparent payment handling in HTTP client
-- **Policy engine** — spend limits, domain allowlists, approval thresholds
-- **Auto-subscribe** — switch to subscriptions when per-call is more expensive
-- **Receipts** — full audit trail of every payment decision
-
-### For the Ecosystem
-- **Open 402 response standard** — machine-readable pricing for any API
-- **Open receipt standard** — structured audit trail for agent commerce
-- **Protocol-agnostic** — x402 today, any payment method tomorrow
-
----
-
-## How It Works
-
-### The 402 Flow
-
-```
-┌──────────┐                          ┌──────────┐
-│ AI Agent │                          │ Paid API │
-└────┬─────┘                          └────┬─────┘
-     │                                     │
-     │  GET /api/search?q=test             │
-     │────────────────────────────────────►│
-     │                                     │
-     │  402 Payment Required               │
-     │  {                                  │
-     │    pricing: { amount: "0.01" },     │
-     │    subscriptions: [...],            │
-     │    methods: [{ type: "x402" }, ...] │
-     │  }                                  │
-     │◄────────────────────────────────────│
-     │                                     │
-     │  Policy: $0.01 ≤ max? ✓            │
-     │  Pay: sign USDC transfer            │
-     │                                     │
-     │  GET /api/search?q=test             │
-     │  X-PAYMENT: <signed proof>          │
-     │────────────────────────────────────►│
-     │                                     │
-     │  Verify payment ✓                   │
-     │  Execute handler                    │
-     │                                     │
-     │  200 OK { results: [...] }          │
-     │  X-RECEIPT: <receipt-id>            │
-     │◄────────────────────────────────────│
-```
-
-### Agent Subscriptions
-
-When per-call payments get expensive, agents auto-subscribe:
-
-```typescript
-// Agent detects: 800 calls/day × $0.01 = $8.00
-// Daily subscription available: $5.00 unlimited
-// Auto-subscribes, saves 37%
-```
-
-### Policy Engine
-
-Agents don't spend blindly. The policy engine prevents:
-- Spending more than $X per request or per day
-- Paying unauthorized domains
-- Exceeding budget without human approval
-
-```typescript
-policy: {
-  maxPerRequest: '1.00',     // never pay more than $1 per call
-  maxPerDay: '50.00',        // daily budget cap
-  allowedDomains: ['*.trusted.dev'],
-  approvalThreshold: '5.00', // ask human above $5
-}
-```
-
----
-
-## Architecture
+## Project structure
 
 ```
 openagentpay/
 ├── packages/
-│   ├── core/              # Types, schemas, builders (zero deps)
-│   ├── adapter-mock/      # Test/dev payment adapter
-│   ├── adapter-credits/   # Prepaid balance system
-│   ├── adapter-x402/      # Real stablecoin payments
+│   ├── core/              # types, schemas, builders, parsers — zero deps
+│   ├── adapter-mock/      # simulated payments
+│   ├── adapter-credits/   # prepaid balance system
+│   ├── adapter-x402/      # USDC on Base (EIP-3009)
 │   ├── server-express/    # Express middleware
 │   ├── server-hono/       # Hono middleware
-│   ├── client/            # Agent HTTP client
-│   ├── policy/            # Spend governance
-│   ├── receipts/          # Receipt storage
-│   └── mcp/               # MCP tool adapter
-├── examples/
-│   ├── paid-weather-api/  # Server example
-│   └── agent-client/      # Client example
-└── specs/
-    ├── 402-response.md    # 402 format specification
-    └── receipt.md         # Receipt schema specification
+│   ├── client/            # agent HTTP client (wraps fetch)
+│   ├── policy/            # spend governance engine
+│   ├── receipts/          # receipt storage + query + export
+│   ├── mcp/               # paid MCP tool adapter
+│   └── otel-exporter/     # OpenTelemetry integration
+├── examples/              # 3 runnable demos
+├── specs/                 # 402 response + receipt format specs
+└── docs/                  # 8 guides
 ```
-
----
-
-## Payment Methods
-
-| Method | Type | Settlement | Use Case |
-|--------|------|-----------|----------|
-| **Mock** | Testing | Instant (simulated) | Development, CI, demos |
-| **Credits** | Prepaid balance | Instant | Predictable budgets |
-| **x402 (USDC)** | Stablecoin | ~2 seconds (Base L2) | Production agent payments |
 
 ---
 
 ## Development
 
 ```bash
-# Clone
-git clone https://github.com/OpenAgentPay/openagentpay.git
-cd openagentpay
-
-# Install
+git clone https://github.com/alokemajumder/OpenAgentPay.git
+cd OpenAgentPay
 pnpm install
-
-# Build all packages
 pnpm build
-
-# Run tests
 pnpm test
-
-# Run the example
-cd examples/paid-weather-api
-pnpm start
 ```
+
+Built with TypeScript, Turborepo, pnpm workspaces, Biome, and Vitest.
 
 ---
 
-## Roadmap
+## Specifications
 
-See [SCOPE.md](./SCOPE.md) for detailed scope, progress tracking, and architecture decisions.
+- [402 Response Format](./specs/402-response.md) — the machine-readable pricing schema agents parse
+- [Agent Payment Receipt](./specs/receipt.md) — the structured audit record every payment generates
 
-- **Phase 1** (current): Core types + mock adapter + Express middleware + weather API example
-- **Phase 2**: Client SDK + policy engine + credits adapter
-- **Phase 3**: x402 real payments + subscriptions + receipts
-- **Phase 4**: Hono middleware + MCP integration
-- **Phase 5**: Python SDK + OpenTelemetry + mainnet launch
+Full project scope, progress, and architecture decisions: [SCOPE.md](./SCOPE.md)
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+[CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## Security
 
-See [SECURITY.md](./SECURITY.md) for our responsible disclosure policy.
+[SECURITY.md](./SECURITY.md)
 
 ## License
 

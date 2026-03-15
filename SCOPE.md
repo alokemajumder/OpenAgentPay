@@ -204,7 +204,7 @@ Both sides get a signed receipt
 | `@openagentpay/mcp` | Paid MCP tool adapter (server + client) | Phase 4 | 🟢 Complete |
 | `@openagentpay/server-fastapi` | FastAPI middleware (Python) | Phase 5 | ⬜ Not Started |
 | `@openagentpay/client-python` | Python client SDK | Phase 5 | ⬜ Not Started |
-| `@openagentpay/otel-exporter` | OpenTelemetry payment spans | Phase 5 | ⬜ Not Started |
+| `@openagentpay/otel-exporter` | OpenTelemetry payment spans | Phase 5 | 🟢 Complete |
 
 **Status Key:** ⬜ Not Started | 🟡 In Progress | 🟢 Complete | 🔴 Blocked | ⏸️ Deferred
 
@@ -1241,7 +1241,7 @@ npx @openagentpay/example-client "http://localhost:3000/api/weather?city=London"
 |---|-------------|--------|
 | 5.1 | `@openagentpay/server-fastapi` — Python middleware | ⬜ |
 | 5.2 | `@openagentpay/client-python` — Python client | ⬜ |
-| 5.3 | `@openagentpay/otel-exporter` — OpenTelemetry spans | ⬜ |
+| 5.3 | `@openagentpay/otel-exporter` — OpenTelemetry spans | 🟢 |
 | 5.4 | CLI: `npx openagentpay receipts list\|export\|inspect` | ⬜ |
 | 5.5 | Mainnet deployment guide (Base mainnet) | ⬜ |
 | 5.6 | Launch blog post | ⬜ |
@@ -1528,5 +1528,5 @@ Every package must have:
 ---
 
 *Last updated: 2026-03-15*
-*Current phase: Phase 4 — Complete*
-*Overall status: 🟢 Phase 1-4 complete (10 packages, 11,812 lines of TypeScript)*
+*Current phase: Phase 5 — In Progress*
+*Overall status: 🟢 Phase 1-4 complete + Phase 5 partial (11 packages, 12,114 lines of TypeScript)*

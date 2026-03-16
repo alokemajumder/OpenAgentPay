@@ -11,6 +11,9 @@ export type {
   PaymentMethod,
   X402PaymentMethod,
   CreditsPaymentMethod,
+  StripePaymentMethod,
+  PayPalPaymentMethod,
+  UPIPaymentMethod,
   SubscriptionPlan,
 } from "./payment-required.js";
 

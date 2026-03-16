@@ -122,6 +122,54 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
 
+  packages/adapter-paypal:
+    dependencies:
+      '@openagentpay/adapter-credits':
+        specifier: workspace:*
+        version: link:../adapter-credits
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
+  packages/adapter-stripe:
+    dependencies:
+      '@openagentpay/adapter-credits':
+        specifier: workspace:*
+        version: link:../adapter-credits
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
+  packages/adapter-upi:
+    dependencies:
+      '@openagentpay/adapter-credits':
+        specifier: workspace:*
+        version: link:../adapter-credits
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
   packages/adapter-x402:
     dependencies:
       '@openagentpay/core':

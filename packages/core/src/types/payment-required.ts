@@ -55,13 +55,56 @@ export interface CreditsPaymentMethod {
   balance_url: string;
 }
 
+/** Stripe payment method — for per-call charges or credit purchases. */
+export interface StripePaymentMethod {
+  /** Discriminator — always `"stripe"` for Stripe-based payments. */
+  type: 'stripe';
+  /** Stripe publishable key (for client-side). */
+  publishable_key?: string;
+  /** URL to purchase credits via Stripe Checkout. */
+  checkout_url?: string;
+  /** URL to set up a payment method for direct charges. */
+  setup_url?: string;
+  /** Whether direct per-call charging is supported (minimum $0.50). */
+  direct_charge?: boolean;
+}
+
+/** PayPal payment method — for billing agreements or credit purchases. */
+export interface PayPalPaymentMethod {
+  /** Discriminator — always `"paypal"` for PayPal-based payments. */
+  type: 'paypal';
+  /** URL to purchase credits via PayPal. */
+  checkout_url?: string;
+  /** URL to create a PayPal billing agreement for recurring charges. */
+  agreement_url?: string;
+  /** PayPal client ID (for client-side SDK). */
+  client_id?: string;
+}
+
+/** UPI payment method (India) — for mandate-based charges or credit purchases. */
+export interface UPIPaymentMethod {
+  /** Discriminator — always `"upi"` for UPI-based payments. */
+  type: 'upi';
+  /** URL to purchase credits via UPI payment. */
+  checkout_url?: string;
+  /** URL to create a UPI AutoPay mandate. */
+  mandate_url?: string;
+  /** Payment gateway provider name. */
+  gateway?: string;
+}
+
 /**
  * Union of all supported payment methods.
  *
  * Each variant is discriminated by the `type` field so consumers
  * can narrow with a simple `switch` or `if` check.
  */
-export type PaymentMethod = X402PaymentMethod | CreditsPaymentMethod;
+export type PaymentMethod =
+  | X402PaymentMethod
+  | CreditsPaymentMethod
+  | StripePaymentMethod
+  | PayPalPaymentMethod
+  | UPIPaymentMethod;
 
 // ---------------------------------------------------------------------------
 // Pricing

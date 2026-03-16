@@ -1,0 +1,52 @@
+{
+  "name": "@openagentpay/adapter-stripe",
+  "version": "0.1.0",
+  "description": "Stripe payment adapter for OpenAgentPay — per-call charges and credit purchases via Stripe",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "openagentpay",
+    "payment",
+    "stripe",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAgentPay/OpenAgentPay",
+    "directory": "packages/adapter-stripe"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@openagentpay/adapter-credits": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@openagentpay/adapter-credits": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

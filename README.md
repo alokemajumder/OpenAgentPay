@@ -30,7 +30,7 @@ import { mock } from '@openagentpay/adapter-mock';
 const app = express();
 const paywall = createPaywall({
   recipient: '0xYourWallet',
-  adapters: [mock()],   // swap for x402() when you're ready for real USDC
+  adapters: [mock()],   // swap for x402() for real USDC, stripe() for Stripe, etc.
 });
 
 app.get('/api/search', paywall({ price: '0.01' }), (req, res) => {
@@ -68,49 +68,106 @@ The agent hits the endpoint, gets a 402 back, checks its policy engine ("Am I al
 
 ---
 
-## The full picture
-
-OpenAgentPay is 11 packages that cover the entire payment lifecycle:
+## 14 packages. 87 source files. 16,966 lines of TypeScript.
 
 ### Payment adapters — how money moves
 
-| Adapter | What happens | When to use |
-|---------|-------------|-------------|
-| `adapter-mock` | Every payment auto-succeeds. Wallet tracks a fake balance. | Development, testing, CI |
-| `adapter-credits` | Agent spends from a prepaid credit account. Atomic balance deductions. | Predictable budgets, no blockchain needed |
-| `adapter-x402` | Agent signs an EIP-3009 USDC authorization. Facilitator settles on Base L2. | Production. Real money. |
+| Adapter | Package | What happens | When to use |
+|---------|---------|-------------|-------------|
+| **Mock** | `adapter-mock` | Every payment auto-succeeds. Fake balance tracked. | Development, testing, CI |
+| **Credits** | `adapter-credits` | Agent spends from a prepaid balance. Atomic deductions via `InMemoryCreditStore`. | Predictable budgets, zero per-call fees |
+| **x402 (USDC)** | `adapter-x402` | Agent signs EIP-3009 authorization. Facilitator settles on Base L2. | Production crypto payments |
+| **Stripe** | `adapter-stripe` | Verify PaymentIntents via Stripe REST API. `StripeCreditBridge` for credit purchases via Checkout. | Fiat payments (US/EU) |
+| **PayPal** | `adapter-paypal` | Verify Orders via PayPal REST API. `PayPalCreditBridge` for credit purchases. OAuth2 auth. | Global fiat payments |
+| **UPI** | `adapter-upi` | Verify transactions via Razorpay/Cashfree. `UPIMandateManager` for AutoPay mandates. | India (near-zero fees) |
 
 ### Server middleware — how APIs accept payment
 
-| Package | Framework | What it does |
-|---------|-----------|-------------|
-| `server-express` | Express 4+ | `paywall()` middleware. Static or dynamic pricing. Subscription management. Receipt generation. |
-| `server-hono` | Hono 4+ | Same API, adapted for Hono. `paywall()` returns Hono middleware. `routes()` returns a Hono app. |
+| Package | Framework | Key export |
+|---------|-----------|------------|
+| `server-express` | Express 4+ | `createPaywall(config)` → Express middleware. Subscriptions via `paywall.routes()`. |
+| `server-hono` | Hono 4+ | `createPaywall(config)` → Hono middleware. Subscriptions via `paywall.routes()`. |
 
 ### Agent-side — how agents pay
 
-| Package | What it does |
-|---------|-------------|
-| `client` | Wraps `fetch` with `withPayment()`. Detects 402, parses pricing, checks policy, pays, retries. |
-| `policy` | Budget engine. 11 rule types. Domain globs. Rolling spend tracking. Approval thresholds. |
+| Package | Key export | What it does |
+|---------|------------|-------------|
+| `client` | `withPayment(fetch, config)` | Wraps native `fetch`. Detects 402, parses pricing, checks policy, pays, retries, collects receipts. |
+| `policy` | `createPolicy(config)` | 11 spend rules. Domain globs (`*`, `**`). Rolling 24h spend tracking. Approval thresholds. |
 
-### Infrastructure — what happens after payment
+### Infrastructure
 
-| Package | What it does |
-|---------|-------------|
-| `core` | Every type, interface, schema, error class, builder, and parser. Zero dependencies. |
-| `receipts` | Store receipts in memory or on disk. Query by payer, date, method, amount. Export to CSV/JSON. |
-| `mcp` | Paid MCP tools. `paidTool()` wraps any tool handler. `withMCPPayment()` wraps any MCP client. |
-| `otel-exporter` | OpenTelemetry spans + metrics. `openagentpay.payments.count`, `.amount`, `.latency`. |
+| Package | Key exports | What it does |
+|---------|-------------|-------------|
+| `core` | Types, builders, parsers, errors | Every type, schema, and utility. Zero dependencies. 10 error classes. |
+| `receipts` | `createReceiptStore(config)` | Memory or file-based storage. Query by payer, payee, date, amount, method. CSV/JSON export. |
+| `mcp` | `paidTool()`, `withMCPPayment()` | Paid MCP tools. Server wraps tool handlers. Client auto-pays transparently. |
+| `otel-exporter` | `createPaymentTracer()`, `createPaymentMetrics()` | OpenTelemetry spans + metrics (`openagentpay.payments.*`). |
 
 ---
 
-## Subscriptions — because per-call isn't always cheapest
+## Payment methods — the economics
 
-An agent calling your API 800 times a day at $0.01/call is spending $8. If you offer a $5/day unlimited plan, the agent should subscribe. OpenAgentPay makes this automatic.
+| $0.01 API call | x402 (USDC) | Stripe | PayPal | UPI (India) |
+|----------------|-------------|--------|--------|-------------|
+| Per-call fee | ~$0.001 | Not possible (min $0.50) | $0.49 | ~$0.00 |
+| Best strategy | Pay directly | Aggregate via metered billing | Aggregate via billing agreement | Aggregate via AutoPay mandate |
+| Credits bridge | N/A | Buy $50 credits via Checkout, deduct per-call | Buy credits via PayPal order, deduct per-call | Buy credits via UPI payment, deduct per-call |
+
+**Fiat adapters support two modes:**
+1. **Credits bridge** (recommended for micropayments) — agent purchases credits via Stripe/PayPal/UPI, credits are spent per-call with zero processing fees
+2. **Direct charge** (for larger amounts) — per-call charges against a saved payment method (Stripe minimum $0.50)
+
+---
+
+## The 402 payment flow
+
+```
+AI Agent                               Paid API
+   │                                      │
+   │  GET /api/search?q=test              │
+   │─────────────────────────────────────►│
+   │                                      │
+   │  402 Payment Required                │
+   │  {                                   │
+   │    type: "payment_required",         │
+   │    pricing: {                        │
+   │      amount: "0.01",                 │
+   │      currency: "USDC",              │
+   │      unit: "per_request"            │
+   │    },                                │
+   │    methods: [                        │
+   │      { type: "x402", ... },          │
+   │      { type: "stripe", ... },        │
+   │      { type: "credits", ... }        │
+   │    ],                                │
+   │    subscriptions: [                  │
+   │      { id: "daily", amount: "5.00",  │
+   │        period: "day", calls: 1000 }  │
+   │    ]                                 │
+   │  }                                   │
+   │◄─────────────────────────────────────│
+   │                                      │
+   │  [Policy: amount OK? domain OK?]     │
+   │  [Select method → pay → retry]       │
+   │                                      │
+   │  GET /api/search?q=test              │
+   │  X-PAYMENT: <proof>                  │
+   │─────────────────────────────────────►│
+   │                                      │
+   │  [Verify → serve → receipt]          │
+   │                                      │
+   │  200 OK  { results: [...] }          │
+   │◄─────────────────────────────────────│
+```
+
+---
+
+## Subscriptions
+
+Agents that call the same API repeatedly can subscribe instead of paying per call.
 
 ```typescript
-// Server: define plans
 const paywall = createPaywall({
   recipient: '0x...',
   adapters: [mock()],
@@ -128,11 +185,11 @@ app.use(paywall.routes());
 // → POST /openagentpay/unsubscribe
 ```
 
-The 402 response includes subscription plans alongside per-call pricing. The agent compares costs and picks the cheapest option. Subscriptions use an `X-SUBSCRIPTION` token header — no per-call payment needed.
+Plans are advertised in the 402 response. Agents compare per-call vs. subscription cost and pick the cheapest. Active subscriptions use `X-SUBSCRIPTION` header — no per-call payment.
 
 ---
 
-## Policy engine — agents don't spend blindly
+## Policy engine
 
 Every payment goes through the policy engine first. No exceptions.
 
@@ -140,78 +197,61 @@ Every payment goes through the policy engine first. No exceptions.
 import { createPolicy } from '@openagentpay/policy';
 
 const policy = createPolicy({
-  maxPerRequest: '1.00',       // single call cap
-  maxPerDay: '50.00',          // 24h rolling budget
-  maxPerSession: '100.00',     // session lifetime budget
-  maxPerProvider: '10.00',     // per-domain daily cap
-  allowedDomains: ['*.trusted.dev', 'api.research.org'],
+  maxPerRequest: '1.00',
+  maxPerDay: '50.00',
+  maxPerProvider: '10.00',
+  allowedDomains: ['*.trusted.dev'],
   blockedDomains: ['*.sketchy.io'],
   allowedCurrencies: ['USDC'],
-  approvalThreshold: '5.00',  // flag for human review above this
-  testMode: false,
+  approvalThreshold: '5.00',
 });
 
-const decision = policy.evaluate({ amount: '0.50', currency: 'USDC', domain: 'api.trusted.dev' });
-// → { outcome: 'approve', rules_evaluated: ['test_mode', 'blocked_domains', ...] }
+const result = policy.evaluate({ amount: '0.50', currency: 'USDC', domain: 'api.trusted.dev' });
+// → { outcome: 'approve', rules_evaluated: [...] }
 ```
 
-11 rules, evaluated in strict order. `blockedDomains` is checked before `allowedDomains`. `approvalThreshold` is checked last. Domain patterns support `*` (single segment) and `**` (multi-segment).
-
-Spend tracking is built in. `policy.getDailyTotal()`, `policy.getSessionTotal()`, `policy.getProviderTotal(domain)` — all updated after each `policy.recordSpend()`.
+11 rules, strict evaluation order. `policy.getDailyTotal()`, `policy.getSessionTotal()`, `policy.getProviderTotal(domain)` for spend tracking.
 
 ---
 
-## Receipts — every payment, accounted for
+## Receipts
+
+Every payment generates a structured receipt. Query, aggregate, export.
 
 ```typescript
 import { createReceiptStore } from '@openagentpay/receipts';
 
 const store = createReceiptStore({ type: 'file', path: './data/receipts' });
 
-// Query
 const results = await store.query({ payer: '0x1234...', method: 'x402', limit: 50 });
-
-// Summarize
 const summary = await store.summary();
-// { totalCount: 1432, totalAmount: '14.32', byMethod: { x402: { count: 1200, amount: '12.00' } }, ... }
-
-// Export
 const csv = await store.export({ format: 'csv' });
 ```
 
-Every receipt captures: who paid, what was requested, how much, which payment method, the on-chain transaction hash (for x402), response status code, response content hash, latency, and which policy rules were evaluated. The full schema is in [`specs/receipt.md`](./specs/receipt.md).
+Receipt fields: payer, payee, endpoint, amount, currency, method, transaction hash, response status, content hash, latency, policy decision. Full schema in [`specs/receipt.md`](./specs/receipt.md).
 
 ---
 
-## Paid MCP tools — monetize any tool invocation
+## Paid MCP tools
 
 ```typescript
-// Server: wrap your MCP tool
+// Server: wrap any MCP tool with payment
 import { paidTool } from '@openagentpay/mcp';
+const search = paidTool({ price: '0.01', adapters: [mock()], recipient: '0x...' },
+  async (params) => ({ results: await engine.search(params.query) })
+);
 
-const search = paidTool({
-  price: '0.01', adapters: [mock()], recipient: '0x...',
-}, async (params: { query: string }) => {
-  return { results: await engine.search(params.query) };
-});
-
-// Client: your MCP client handles payment transparently
+// Client: agent pays for MCP tools transparently
 import { withMCPPayment } from '@openagentpay/mcp';
-
-const client = withMCPPayment(mcpClient, {
-  wallet: mockWallet(),
-  policy: { maxPerCall: '0.10', maxPerDay: '5.00' },
-});
-
+const client = withMCPPayment(mcpClient, { wallet: mockWallet(), policy: { maxPerCall: '0.10' } });
 const result = await client.callTool('search', { query: 'fusion energy' });
-// → Payment negotiated, verified, and settled. Receipt generated. Result returned.
 ```
 
-Works with any MCP implementation. No SDK dependency. `withMCPPayment` proxies `callTool`, detects payment requirements in tool results, and handles the rest.
+Works with any object that has a `callTool(name, params)` method. No MCP SDK dependency.
 
 ---
 
-## Observability
+## OpenTelemetry
 
 ```typescript
 import { createPaymentTracer, createPaymentMetrics } from '@openagentpay/otel-exporter';
@@ -219,57 +259,57 @@ import { createPaymentTracer, createPaymentMetrics } from '@openagentpay/otel-ex
 const tracer = createPaymentTracer();
 const metrics = createPaymentMetrics();
 
-// Plug into any receipt callback
 paywall.on('payment:received', (receipt) => {
-  tracer.recordPayment(receipt);   // → OTel span with openagentpay.* attributes
-  metrics.recordPayment(receipt);  // → counters + latency histogram
+  tracer.recordPayment(receipt);
+  metrics.recordPayment(receipt);
 });
 ```
 
-Requires `@opentelemetry/api` as a peer dependency. Bring your own SDK, exporters, and collector.
+Metrics: `openagentpay.payments.count`, `openagentpay.payments.amount`, `openagentpay.payments.latency`, `openagentpay.payments.failures`. Requires `@opentelemetry/api` as peer dependency.
+
+---
+
+## Getting paid
+
+OpenAgentPay is not a payment processor — it's middleware.
+
+- **[Getting Paid Guide](./docs/getting-paid.md)** — wallet setup, USDC settlement, fiat offramps, tax/regulatory FAQ
+- **[Fiat Payment Methods](./docs/fiat-payment-methods.md)** — Stripe metered billing, PayPal billing agreements, UPI AutoPay mandates, fee comparison
 
 ---
 
 ## Examples
 
 ```bash
-# Start the paid weather API
-cd examples/paid-weather-api && pnpm start
-
-# In another terminal — run the agent client
-cd examples/agent-client && pnpm start
-
-# Or run the self-contained end-to-end demo (starts its own server)
-cd examples/end-to-end-demo && pnpm start
+cd examples/paid-weather-api && pnpm start   # Express API with pricing + subscriptions
+cd examples/agent-client && pnpm start        # Agent that auto-pays (run weather API first)
+cd examples/end-to-end-demo && pnpm start     # Self-contained: starts server, pays, subscribes
 ```
-
-| Example | What it shows |
-|---------|--------------|
-| `paid-weather-api` | Express API with $0.005/call weather, $0.01/day dynamic forecast pricing, two subscription plans |
-| `agent-client` | Agent that auto-discovers pricing, pays with mock wallet, handles policy denials |
-| `end-to-end-demo` | Single script: starts server, gets 402, pays, subscribes, uses subscription, unsubscribes |
 
 ---
 
 ## Project structure
 
 ```
-openagentpay/
+openagentpay/                    14 packages · 87 TS files · 16,966 lines
 ├── packages/
-│   ├── core/              # types, schemas, builders, parsers — zero deps
-│   ├── adapter-mock/      # simulated payments
-│   ├── adapter-credits/   # prepaid balance system
-│   ├── adapter-x402/      # USDC on Base (EIP-3009)
-│   ├── server-express/    # Express middleware
-│   ├── server-hono/       # Hono middleware
-│   ├── client/            # agent HTTP client (wraps fetch)
-│   ├── policy/            # spend governance engine
-│   ├── receipts/          # receipt storage + query + export
-│   ├── mcp/               # paid MCP tool adapter
-│   └── otel-exporter/     # OpenTelemetry integration
-├── examples/              # 3 runnable demos
-├── specs/                 # 402 response + receipt format specs
-└── docs/                  # 8 guides
+│   ├── core/                    types, schemas, builders, parsers — zero deps
+│   ├── adapter-mock/            simulated payments
+│   ├── adapter-credits/         prepaid balance system
+│   ├── adapter-x402/            USDC on Base (EIP-3009)
+│   ├── adapter-stripe/          Stripe integration + credit bridge
+│   ├── adapter-paypal/          PayPal integration + credit bridge
+│   ├── adapter-upi/             UPI integration + mandate manager
+│   ├── server-express/          Express middleware
+│   ├── server-hono/             Hono middleware
+│   ├── client/                  agent HTTP client (wraps fetch)
+│   ├── policy/                  spend governance engine
+│   ├── receipts/                receipt storage + query + export
+│   ├── mcp/                     paid MCP tool adapter
+│   └── otel-exporter/           OpenTelemetry integration
+├── examples/                    3 runnable demos
+├── specs/                       402 response + receipt format specs
+└── docs/                        10 guides
 ```
 
 ---
@@ -284,35 +324,31 @@ pnpm build
 pnpm test
 ```
 
-Built with TypeScript, Turborepo, pnpm workspaces, Biome, and Vitest.
+Built with TypeScript (ES2022), Turborepo, pnpm workspaces, Biome, and Vitest.
 
 ---
 
-## Getting Paid
+## Documentation
 
-OpenAgentPay is not a payment processor — it's middleware. Adapters handle the actual money movement.
-
-### Fiat Rails: Stripe, PayPal, UPI
-
-See the **[Fiat Payment Methods Guide](./docs/fiat-payment-methods.md)** for how API owners can charge agents using traditional payment rails. Key insight: **per-call charging is uneconomical on fiat rails** (Stripe minimum $0.50, fees destroy margins). Instead, aggregate usage into periodic charges or use prepaid credits. UPI (India) is near-zero cost.
-
-### Crypto Rails: USDC on Base
-
-See the **[Getting Paid Guide](./docs/getting-paid.md)** for the complete walkthrough of how API owners collect payments via x402, including:
-
-- How USDC reaches your wallet via x402 (direct on-chain settlement, facilitator pays gas)
-- Wallet setup options (Coinbase, self-custodial, multisig, hardware)
-- Converting USDC to fiat (Coinbase, Circle Mint, Stripe)
-- Transaction costs ($0.001-$0.002 per micropayment vs. $0.30+ on traditional rails)
-- Credits system (prepaid balances, you hold the funds)
-- Tax/accounting guidance and regulatory FAQ
+| Guide | What it covers |
+|-------|---------------|
+| [Getting Started](./docs/getting-started.md) | Install, server setup, client setup, switching to real payments |
+| [Concepts](./docs/concepts.md) | 402 flow, adapters, policy engine, receipts, subscriptions |
+| [Server SDK](./docs/server-sdk.md) | Express/Hono middleware, pricing, subscriptions, events |
+| [Client SDK](./docs/client-sdk.md) | withPayment, policy config, spend tracking, error handling |
+| [Payment Adapters](./docs/payment-adapters.md) | Mock, credits, x402, custom adapters |
+| [Fiat Payment Methods](./docs/fiat-payment-methods.md) | Stripe, PayPal, UPI — architecture, fees, integration |
+| [Getting Paid](./docs/getting-paid.md) | Wallet setup, USDC settlement, fiat conversion, tax |
+| [Policy Engine](./docs/policy-engine.md) | 11 rules, domain globs, spend tracking, evaluation order |
+| [Receipts](./docs/receipts.md) | Storage, querying, aggregation, CSV/JSON export |
+| [MCP Integration](./docs/mcp-integration.md) | Paid MCP tools — server wrapper, client auto-payment |
 
 ## Specifications
 
-- [402 Response Format](./specs/402-response.md) — the machine-readable pricing schema agents parse
-- [Agent Payment Receipt](./specs/receipt.md) — the structured audit record every payment generates
-
-Full project scope, progress, and architecture decisions: [SCOPE.md](./SCOPE.md)
+| Spec | What it defines |
+|------|----------------|
+| [402 Response Format](./specs/402-response.md) | Machine-readable pricing schema agents parse |
+| [Agent Payment Receipt](./specs/receipt.md) | Structured audit record for every payment |
 
 ---
 

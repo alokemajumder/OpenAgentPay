@@ -89,7 +89,7 @@ export interface PaymentDetails {
   currency: string;
 
   /** Which payment adapter processed this payment. */
-  method: "x402" | "credits" | "mock" | "stripe" | "paypal" | "upi";
+  method: "x402" | "credits" | "mock" | "stripe" | "paypal" | "upi" | "mpp" | "visa";
 
   /** On-chain transaction hash (present for x402 payments). */
   transaction_hash?: string;

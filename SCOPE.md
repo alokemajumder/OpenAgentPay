@@ -1,7 +1,7 @@
 # OpenAgentPay — Project Scope & Progress Tracker
 
-> **Stripe for AI Agents — Open-Source Payment SDK**
-> AI agents discover prices, pay per call, and get receipts. API providers earn instantly. No signup, no API keys, no invoices.
+> **Open-Source Payment Orchestration Layer for Machine-to-Machine Commerce**
+> One integration point for every agent payment method — x402, MPP, Visa, Stripe, PayPal, UPI, credits. Intelligent routing, policy enforcement, unified receipts. Not a payment processor — the experience and routing layer that connects them all.
 
 ---
 

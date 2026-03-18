@@ -93,6 +93,40 @@ export interface UPIPaymentMethod {
   gateway?: string;
 }
 
+/** MPP (Machine Payments Protocol) payment method — Stripe + Tempo backed. */
+export interface MPPPaymentMethod {
+  /** Discriminator — always `"mpp"` for Machine Payments Protocol. */
+  type: 'mpp';
+  /** The MPP challenge ID from the 402 response. */
+  challenge_id: string;
+  /** Payment networks accepted (e.g., 'tempo', 'stripe', 'lightning'). */
+  networks: string[];
+  /** Amount in smallest unit. */
+  amount: string;
+  /** Currency code. */
+  currency: string;
+  /** Recipient address or account. */
+  recipient: string;
+  /** MPP server URL for credential submission. */
+  server_url?: string;
+  /** Whether sessions (streaming/aggregated payments) are supported. */
+  sessions_supported?: boolean;
+}
+
+/** Visa Intelligent Commerce payment method — via Visa MCP or AgentCard. */
+export interface VisaPaymentMethod {
+  /** Discriminator — always `"visa"` for Visa payments. */
+  type: 'visa';
+  /** Visa MCP server URL. */
+  mcp_url?: string;
+  /** AgentCard API URL. */
+  agentcard_url?: string;
+  /** Whether tokenized card credentials are supported. */
+  tokenized?: boolean;
+  /** Merchant category code (if required). */
+  mcc?: string;
+}
+
 /**
  * Union of all supported payment methods.
  *
@@ -104,7 +138,9 @@ export type PaymentMethod =
   | CreditsPaymentMethod
   | StripePaymentMethod
   | PayPalPaymentMethod
-  | UPIPaymentMethod;
+  | UPIPaymentMethod
+  | MPPPaymentMethod
+  | VisaPaymentMethod;
 
 // ---------------------------------------------------------------------------
 // Pricing

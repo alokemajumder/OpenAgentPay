@@ -26,6 +26,8 @@ export type {
   StripePaymentMethod,
   PayPalPaymentMethod,
   UPIPaymentMethod,
+  MPPPaymentMethod,
+  VisaPaymentMethod,
   SubscriptionPlan,
   AgentPaymentReceipt,
   Payer,

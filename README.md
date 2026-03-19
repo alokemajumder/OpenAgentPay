@@ -119,29 +119,80 @@ const router = createRouter({
     { adapter: stripe({ ... }), costPerTransaction: '0.30', costPercentage: 2.9, minimumAmount: '0.50' },
     { adapter: credits({ ... }), costPerTransaction: '0' },
   ],
-  strategy: 'smart',   // composite: success rate × 0.5 + cost × 0.3 + latency × 0.2
-  cascade: true,        // auto-retry on next adapter if first fails
+  strategy: 'smart',
+  cascade: true,
 });
 
 const decision = router.select({ amount: '0.01', currency: 'USDC' });
 // → { adapter: mppAdapter, reason: 'lowest cost with 98% success rate' }
 ```
 
-**7 routing strategies:**
+**14 routing strategies:**
 
-| Strategy | How it selects |
-|----------|---------------|
-| `priority` | Static priority order |
-| `lowest-cost` | Cheapest viable adapter for the amount |
-| `highest-success` | Best recent success rate (sliding window) |
-| `lowest-latency` | Fastest recent response time |
-| `round-robin` | Even distribution across healthy adapters |
-| `weighted` | Probabilistic by weight (for A/B testing) |
-| `smart` | Composite score: success × 0.5 + cost × 0.3 + latency × 0.2 |
+| # | Strategy | How it selects |
+|---|----------|---------------|
+| 1 | `priority` | Static priority order |
+| 2 | `lowest-cost` | Cheapest viable adapter for the amount |
+| 3 | `highest-success` | Best recent success rate (sliding window) |
+| 4 | `lowest-latency` | Fastest recent response time |
+| 5 | `round-robin` | Even distribution across healthy adapters |
+| 6 | `weighted` | Probabilistic by weight (A/B testing payment rails) |
+| 7 | `smart` | Composite score: success × 0.5 + cost × 0.3 + latency × 0.2 |
+| 8 | `adaptive` | Multi-armed bandit — 10% exploration, 90% exploit best performer |
+| 9 | `conditional` | Rule-based if/else routing (define `RoutingRule[]` with conditions) |
+| 10 | `amount-tiered` | Different strategy per amount range (micro → crypto, large → cards) |
+| 11 | `geo-aware` | Region-based preferences (India → UPI, US → MPP, EU → Stripe) |
+| 12 | `time-aware` | Time-of-day optimization with configurable UTC windows |
+| 13 | `failover-only` | Sustained primary/secondary switching with recovery probes |
+| 14 | `custom` | User-defined scoring function — full control over adapter selection |
 
-**Health tracking:** Per-adapter success rate, average latency, p95 latency, failure counts — all in a sliding time window. Unhealthy adapters are automatically excluded.
+**Advanced routing examples:**
 
-**Cascade failover:** If the selected adapter fails, the cascade manager automatically retries with the next-best adapter. Every attempt is logged.
+```typescript
+// Rule-based routing (like Juspay's merchant routing engine)
+const router = createRouter({
+  adapters: [...],
+  strategy: 'conditional',
+  rules: [
+    { name: 'micro', condition: (r) => parseFloat(r.amount) < 0.50, preferredAdapters: ['mpp', 'x402', 'credits'] },
+    { name: 'india', condition: (r) => r.region === 'IN', preferredAdapters: ['upi', 'credits', 'mpp'] },
+    { name: 'fiat', condition: (r) => ['USD', 'EUR'].includes(r.currency), preferredAdapters: ['stripe', 'paypal'] },
+  ],
+});
+
+// Amount-tiered routing
+const router = createRouter({
+  adapters: [...],
+  strategy: 'amount-tiered',
+  amountTiers: [
+    { name: 'micro', maxAmount: 0.50, strategy: 'lowest-cost', preferredAdapters: ['mpp', 'x402'] },
+    { name: 'medium', maxAmount: 10, strategy: 'smart' },
+    { name: 'large', maxAmount: Infinity, strategy: 'highest-success' },
+  ],
+});
+
+// Adaptive (multi-armed bandit) — learns which adapter performs best
+const router = createRouter({
+  adapters: [...],
+  strategy: 'adaptive',
+  explorationRate: 0.1,  // 10% traffic tests all adapters, 90% goes to best
+});
+
+// Custom scoring — define your own formula
+const router = createRouter({
+  adapters: [...],
+  strategy: 'custom',
+  customScoring: (entry, health, cost, request) => {
+    const latencyPenalty = health.avgLatencyMs > 500 ? 0.5 : 1.0;
+    const costBonus = 1 / (1 + parseFloat(cost.transactionCost));
+    return health.successRate * costBonus * latencyPenalty;
+  },
+});
+```
+
+**Health tracking:** Per-adapter success rate, avg/p95 latency, failure counts — sliding time window. Unhealthy adapters are automatically excluded from routing.
+
+**Cascade failover:** If the selected adapter fails, the cascade manager retries with the next-best. Every attempt is logged with adapter type, latency, and error.
 
 ### Layer 3 — Policy Engine
 
@@ -211,7 +262,7 @@ await client.callTool('search', { query: 'test' });
 | # | Package | Layer | Description |
 |---|---------|-------|-------------|
 | 1 | `core` | Foundation | Types, schemas, builders, parsers, 10 error classes. Zero deps. |
-| 2 | `router` | Orchestration | Smart routing, health tracking, cost estimation, cascade failover. 7 strategies. |
+| 2 | `router` | Orchestration | Smart routing, health tracking, cost estimation, cascade failover. 14 strategies including adaptive (multi-armed bandit), conditional (rule-based), geo-aware, time-aware, and custom scoring. |
 | 3 | `adapter-mpp` | Connector | MPP protocol — Tempo, Stripe SPT, Lightning. Sessions ("OAuth for money"). |
 | 4 | `adapter-x402` | Connector | x402 protocol — USDC on Base via EIP-3009 + facilitator. |
 | 5 | `adapter-visa` | Connector | Visa Intelligent Commerce MCP + AgentCard virtual debit cards. |
@@ -262,6 +313,7 @@ cd examples/end-to-end-demo && pnpm start      # Full flow in one script
 |-------|--------|
 | [Getting Started](./docs/getting-started.md) | Install, server setup, client setup |
 | [Concepts](./docs/concepts.md) | 402 flow, adapters, policy, receipts |
+| [Smart Router](./docs/smart-router.md) | 14 routing strategies, health tracking, cascade failover, cost estimation |
 | [Server SDK](./docs/server-sdk.md) | Middleware, pricing, subscriptions, events |
 | [Client SDK](./docs/client-sdk.md) | withPayment, policy, spend tracking |
 | [Payment Adapters](./docs/payment-adapters.md) | All 8 adapters + custom adapter guide |

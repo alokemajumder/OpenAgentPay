@@ -9,6 +9,7 @@ import type {
   PaymentRequired,
   SubscriptionPlan,
   AgentPaymentReceipt,
+  IncomingRequest,
 } from '@openagentpay/core';
 import {
   buildPaymentRequired,
@@ -147,6 +148,19 @@ function generateId(): string {
   const ts = Date.now().toString(36);
   const rand = randomUUID().replace(/-/g, '').slice(0, 12);
   return `${ts}-${rand}`;
+}
+
+/**
+ * Convert an Express Request to the framework-agnostic IncomingRequest
+ * expected by payment adapters.
+ */
+function toIncomingRequest(req: Request): IncomingRequest {
+  return {
+    method: req.method,
+    url: req.originalUrl || req.url,
+    headers: req.headers as Record<string, string | string[] | undefined>,
+    body: req.body,
+  };
 }
 
 /**
@@ -372,14 +386,19 @@ export function createPaywall(config: PaywallConfig): Paywall {
         const resource = req.originalUrl || req.url;
 
         // -----------------------------------------------------------------
-        // 2. Try each adapter
+        // 2. Try each adapter (cascade on failure)
         // -----------------------------------------------------------------
+        const incomingReq = toIncomingRequest(req);
+        let lastVerificationError: string | undefined;
+        let anyDetected = false;
+
         for (const adapter of config.adapters) {
-          const detected = adapter.detect(req);
+          const detected = adapter.detect(incomingReq);
           if (!detected) continue;
+          anyDetected = true;
 
           // Adapter claims this request carries payment — verify it
-          const verification = await adapter.verify(req, pricing);
+          const verification = await adapter.verify(incomingReq, pricing);
 
           if (verification.valid) {
             // ---------------------------------------------------------------
@@ -441,11 +460,13 @@ export function createPaywall(config: PaywallConfig): Paywall {
             return; // done — request is being handled
           }
 
-          // Verification failed — emit failure event and return 402
+          // Verification failed — record error and cascade to next adapter
+          lastVerificationError = verification.error ?? 'Payment verification failed';
+
           if (shouldEmit) {
             emitter.emit('payment:failed', {
               code: 'payment_invalid',
-              message: verification.error ?? 'Payment verification failed',
+              message: lastVerificationError,
               request: {
                 method: req.method,
                 url: resource,
@@ -454,13 +475,19 @@ export function createPaywall(config: PaywallConfig): Paywall {
             });
           }
 
-          // Return 402 with error context
+          // Continue to next adapter (cascade) instead of returning 402 immediately
+        }
+
+        // -----------------------------------------------------------------
+        // All detected adapters failed verification — return 402
+        // -----------------------------------------------------------------
+        if (anyDetected && lastVerificationError) {
           res
             .status(402)
             .set('Content-Type', 'application/json')
             .json({
               error: 'payment_invalid',
-              message: verification.error ?? 'Payment verification failed',
+              message: lastVerificationError,
               ...buildPaymentRequired({
                 resource,
                 pricing,
@@ -539,10 +566,38 @@ export function createPaywall(config: PaywallConfig): Paywall {
           return;
         }
 
-        // In a production system the payment for the subscription would be
-        // verified here via an adapter.  For now we create the subscription
-        // directly — the payment verification can be layered on top.
+        // Verify payment for the subscription via configured adapters
+        const incomingSubReq = toIncomingRequest(req);
+        let paymentVerified = false;
+        // verificationReceipt is captured for future receipt-tracking on subscriptions
+        let _verificationReceipt: Partial<AgentPaymentReceipt> | undefined;
 
+        for (const adapter of config.adapters) {
+          if (adapter.detect(incomingSubReq)) {
+            const subscriptionPricing = { amount: plan.amount, currency: plan.currency };
+            const result = await adapter.verify(incomingSubReq, subscriptionPricing);
+            if (result.valid) {
+              paymentVerified = true;
+              _verificationReceipt = result.receipt;
+              break;
+            }
+          }
+        }
+
+        if (!paymentVerified) {
+          res
+            .status(402)
+            .set('Content-Type', 'application/json')
+            .json({
+              error: 'payment_required',
+              message: `Payment of ${plan.amount} ${plan.currency} required to subscribe to plan "${plan_id}"`,
+              pricing: { amount: plan.amount, currency: plan.currency, unit: 'per_subscription' as const },
+              methods: getPaymentMethods(),
+            });
+          return;
+        }
+
+        // Payment verified — create subscription
         const now = new Date();
         const periodMs = PERIOD_MS[plan.period] ?? PERIOD_MS.month;
         const expiresAt = new Date(now.getTime() + periodMs);

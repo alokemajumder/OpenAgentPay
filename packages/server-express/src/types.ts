@@ -90,6 +90,18 @@ export interface SubscriptionsConfig {
   basePath?: string;
 }
 
+/** Configuration for intelligent routing (optional). */
+export interface PaywallRouterConfig {
+  /** Routing strategy. */
+  strategy?: string;
+  /** Whether to enable automatic cascade/failover. */
+  cascade?: boolean;
+  /** Maximum cascade attempts. Default: 3 */
+  maxCascadeAttempts?: number;
+  /** Minimum success rate to consider adapter healthy. Default: 0.5 */
+  minSuccessRate?: number;
+}
+
 /** Top-level configuration for `createPaywall`. */
 export interface PaywallConfig {
   /** Recipient wallet address — where payments are directed. */
@@ -100,6 +112,8 @@ export interface PaywallConfig {
   receipts?: ReceiptsConfig;
   /** Subscription handling options. */
   subscriptions?: SubscriptionsConfig;
+  /** Intelligent routing configuration. When set, adapters are routed using the smart router instead of static iteration. */
+  routing?: PaywallRouterConfig;
 }
 
 // ---------------------------------------------------------------------------

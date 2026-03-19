@@ -62,7 +62,7 @@ const VALID_UNITS = new Set([
   "per_unit",
 ]);
 const VALID_PERIODS = new Set(["hour", "day", "week", "month"]);
-const VALID_METHOD_TYPES = new Set(["x402", "credits"]);
+const VALID_METHOD_TYPES = new Set(["x402", "credits", "stripe", "paypal", "upi", "mpp", "visa", "mock"]);
 
 // ---------------------------------------------------------------------------
 // Method validators
@@ -106,18 +106,14 @@ function validateMethod(value: unknown, index: number): PaymentMethod {
   const obj = value as Record<string, unknown>;
   assertString(obj.type, `${prefix}.type`);
 
-  if (!VALID_METHOD_TYPES.has(obj.type as string)) {
-    throw new ValidationError(
-      `Invalid payment method type "${obj.type as string}". Expected one of: ${[...VALID_METHOD_TYPES].join(", ")}.`,
-      `${prefix}.type`,
-    );
-  }
-
+  // Strict validation for known types
   if (obj.type === "x402") {
     validateX402Method(obj, index);
   } else if (obj.type === "credits") {
     validateCreditsMethod(obj, index);
   }
+  // Other types (stripe, paypal, upi, mpp, visa, mock, etc.) pass through
+  // with just the type field validated — lenient validation for extensibility
 
   return value as unknown as PaymentMethod;
 }

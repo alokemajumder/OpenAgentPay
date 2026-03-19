@@ -22,6 +22,7 @@ import type {
   PaywallRouteArg,
   PaywallRouteConfig,
   PaywallEvents,
+  PaywallRouter,
   ReceiptStore,
   SubscriptionStore,
   Subscription,
@@ -261,9 +262,17 @@ export function createPaywall(config: PaywallConfig): Paywall {
   const basePath = config.subscriptions?.basePath ?? '/openagentpay';
 
   // -----------------------------------------------------------------------
-  // Build the list of PaymentMethod descriptors from all adapters
+  // Build the list of PaymentMethod descriptors from all adapters.
+  // When a router is configured, it determines the ordering based on
+  // cost / health / strategy so that agents see preferred methods first.
   // -----------------------------------------------------------------------
-  function getPaymentMethods(): PaymentMethod[] {
+  function getPaymentMethods(pricing?: ExtendedPricing): PaymentMethod[] {
+    if (config.router && pricing) {
+      const ranked = config.router.rank({ amount: pricing.amount, currency: pricing.currency });
+      return ranked.map((adapter) =>
+        adapter.describeMethod({ recipient: config.recipient }),
+      );
+    }
     return config.adapters.map((adapter) =>
       adapter.describeMethod({ recipient: config.recipient }),
     );
@@ -276,7 +285,7 @@ export function createPaywall(config: PaywallConfig): Paywall {
     const body: PaymentRequired = buildPaymentRequired({
       resource,
       pricing,
-      methods: getPaymentMethods(),
+      methods: getPaymentMethods(pricing),
       subscriptions: subscriptionPlans.length > 0 ? subscriptionPlans : undefined,
       meta: subscriptionPlans.length > 0
         ? {
@@ -386,21 +395,31 @@ export function createPaywall(config: PaywallConfig): Paywall {
         const resource = req.originalUrl || req.url;
 
         // -----------------------------------------------------------------
-        // 2. Try each adapter (cascade on failure)
+        // 2. Select adapters (via router or static order)
         // -----------------------------------------------------------------
         const incomingReq = toIncomingRequest(req);
+        const adaptersToTry = config.router
+          ? config.router.rank({ amount: pricing.amount, currency: pricing.currency })
+          : config.adapters;
+
         let lastVerificationError: string | undefined;
         let anyDetected = false;
 
-        for (const adapter of config.adapters) {
+        for (const adapter of adaptersToTry) {
           const detected = adapter.detect(incomingReq);
           if (!detected) continue;
           anyDetected = true;
 
           // Adapter claims this request carries payment — verify it
+          const verifyStart = Date.now();
           const verification = await adapter.verify(incomingReq, pricing);
 
           if (verification.valid) {
+            // Record success in router health tracking
+            if (config.router) {
+              config.router.recordSuccess(adapter.type, { latencyMs: Date.now() - verifyStart });
+            }
+
             // ---------------------------------------------------------------
             // Payment verified — intercept response, then emit receipt
             // ---------------------------------------------------------------
@@ -460,6 +479,11 @@ export function createPaywall(config: PaywallConfig): Paywall {
             return; // done — request is being handled
           }
 
+          // Record failure in router health tracking
+          if (config.router) {
+            config.router.recordFailure(adapter.type, { error: verification.error });
+          }
+
           // Verification failed — record error and cascade to next adapter
           lastVerificationError = verification.error ?? 'Payment verification failed';
 
@@ -491,7 +515,7 @@ export function createPaywall(config: PaywallConfig): Paywall {
               ...buildPaymentRequired({
                 resource,
                 pricing,
-                methods: getPaymentMethods(),
+                methods: getPaymentMethods(pricing),
                 subscriptions: subscriptionPlans.length > 0 ? subscriptionPlans : undefined,
                 meta: subscriptionPlans.length > 0
                   ? {

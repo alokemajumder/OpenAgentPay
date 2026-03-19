@@ -102,6 +102,16 @@ export interface PaywallRouterConfig {
   minSuccessRate?: number;
 }
 
+/** Structural type for a SmartRouter instance. Install @openagentpay/router and pass createRouter() result. */
+export interface PaywallRouter {
+  /** Rank adapters for a given request, returning them in preferred order. */
+  rank(request: { amount: string; currency: string; domain?: string; region?: string }): PaymentAdapter[];
+  /** Record a successful payment verification for health tracking. */
+  recordSuccess(adapterType: string, details: { latencyMs: number }): void;
+  /** Record a failed payment verification for health tracking. */
+  recordFailure(adapterType: string, details: { error?: string }): void;
+}
+
 /** Top-level configuration for `createPaywall`. */
 export interface PaywallConfig {
   /** Recipient wallet address — where payments are directed. */
@@ -114,6 +124,31 @@ export interface PaywallConfig {
   subscriptions?: SubscriptionsConfig;
   /** Intelligent routing configuration. When set, adapters are routed using the smart router instead of static iteration. */
   routing?: PaywallRouterConfig;
+  /**
+   * Pre-built SmartRouter instance for intelligent adapter selection.
+   * When provided, the middleware uses the router's `rank()` method to determine
+   * adapter order (based on cost, health, latency, and strategy) instead of
+   * static iteration over `adapters`. Health tracking is automatically fed
+   * back via `recordSuccess` / `recordFailure`.
+   *
+   * When not provided, adapters are tried in declaration order (backward compatible).
+   *
+   * @example
+   * ```typescript
+   * import { SmartRouter } from '@openagentpay/router';
+   *
+   * const router = new SmartRouter({
+   *   adapters: [
+   *     { adapter: mppAdapter, priority: 1 },
+   *     { adapter: stripeAdapter, priority: 3, costPerTransaction: '0.30' },
+   *   ],
+   *   strategy: 'smart',
+   * });
+   *
+   * const paywall = createPaywall({ recipient: '0x...', adapters: [mppAdapter, stripeAdapter], router });
+   * ```
+   */
+  router?: PaywallRouter;
 }
 
 // ---------------------------------------------------------------------------

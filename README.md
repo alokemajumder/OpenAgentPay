@@ -2,40 +2,74 @@
 
 ### Payment orchestration for the agentic internet.
 
-OpenAgentPay is the **common aggregation layer** for machine-to-machine payments. It is not a payment processor or gateway — it's the experience and routing layer that connects AI agents to every available payment method through a single integration point.
+OpenAgentPay is the **routing and experience layer** for machine-to-machine payments. Not a payment processor — the open-source middleware that connects AI agents to every payment rail through a single integration, with intelligent routing, spend governance, and unified receipts.
+
+Think Juspay HyperCheckout, but for agents paying APIs instead of humans paying merchants.
 
 ```
-                         ┌─────────────────────────┐
-                         │     OpenAgentPay         │
-                         │  Orchestration Layer     │
-                         │                          │
-   AI Agents ──────────► │  Route ─► Verify ─► Pay  │ ──────────► API Providers
-   MCP Tools             │  Policy ─► Receipt       │              MCP Servers
-   Services              │  Retry  ─► Fallback      │              Microservices
-                         │                          │
-                         └──────────┬───────────────┘
-                                    │
-                    ┌───────────────┼───────────────────┐
-                    │               │                   │
-               ┌────▼────┐   ┌─────▼─────┐   ┌────────▼────────┐
-               │  Crypto  │   │   Fiat    │   │   Card/Network  │
-               ├──────────┤   ├───────────┤   ├─────────────────┤
-               │ x402     │   │ Stripe    │   │ Visa MCP        │
-               │ MPP/Tempo│   │ PayPal    │   │ AgentCard       │
-               │ Lightning│   │ UPI       │   │ Mastercard      │
-               │ Credits  │   │ Razorpay  │   │                 │
-               └──────────┘   └───────────┘   └─────────────────┘
+                           ┌──────────────────────────────┐
+                           │       OpenAgentPay            │
+                           │   Orchestration Layer         │
+                           │                               │
+     AI Agents             │  ┌─────────┐  ┌───────────┐  │         API Providers
+     MCP Tools  ──────────►│  │  Smart   │  │  Policy   │  │────────► MCP Servers
+     Services              │  │  Router  │  │  Engine   │  │         Microservices
+                           │  └────┬────┘  └─────┬─────┘  │
+                           │       │             │         │
+                           │  ┌────▼─────────────▼─────┐  │
+                           │  │      Cascade/Retry      │  │
+                           │  │    Receipt Generation   │  │
+                           │  └────────────┬────────────┘  │
+                           └───────────────┼───────────────┘
+                                           │
+                    ┌──────────┬───────────┼──────────┬──────────┐
+                    │          │           │          │          │
+               ┌────▼───┐ ┌───▼───┐ ┌─────▼────┐ ┌──▼───┐ ┌───▼────┐
+               │  MPP   │ │  x402 │ │   Visa   │ │Stripe│ │Credits │
+               │ Tempo  │ │ USDC  │ │ AgentCard│ │PayPal│ │  Mock  │
+               │ Light. │ │ Base  │ │   MCP    │ │ UPI  │ │        │
+               └────────┘ └───────┘ └──────────┘ └──────┘ └────────┘
 ```
-
-**One SDK. Every payment method. Intelligent routing.**
 
 ---
 
-## What OpenAgentPay does
+## Why orchestration matters
 
-### For agent developers
+The machine payment landscape is fragmenting. MPP launched last week (Stripe + Tempo + Anthropic + OpenAI). x402 is live (Coinbase). Visa has an MCP server. AgentCard ships virtual debit cards. UPI mandates work in India. Each protocol has its own SDK, its own flow, its own quirks.
 
-You integrate once. OpenAgentPay handles which payment method to use, how to pay, and what happens when payment fails.
+Without orchestration, every agent developer integrates each payment method separately. Every API provider picks one method and locks out agents that use a different wallet.
+
+**OpenAgentPay sits in the middle.** Agent integrates once. API provider integrates once. The router figures out which rail to use, the policy engine checks the budget, the cascade manager retries on failure, and the receipt system logs everything — regardless of which payment method was used.
+
+---
+
+## Quick start
+
+### API provider: accept payments from any agent
+
+```typescript
+import { createPaywall } from '@openagentpay/server-express';
+import { mpp } from '@openagentpay/adapter-mpp';
+import { x402 } from '@openagentpay/adapter-x402';
+import { credits } from '@openagentpay/adapter-credits';
+
+const paywall = createPaywall({
+  recipient: '0xYourWallet',
+  adapters: [
+    mpp({ networks: ['tempo', 'stripe'] }),
+    x402({ network: 'base' }),
+    credits({ store }),
+  ],
+});
+
+app.get('/api/data', paywall({ price: '0.01' }), (req, res) => {
+  res.json({ results: ['premium-data'] });
+});
+```
+
+The 402 response advertises all accepted methods. Any agent with any wallet can pay.
+
+### Agent developer: pay for any API
 
 ```typescript
 import { withPayment } from '@openagentpay/client';
@@ -50,226 +84,165 @@ const paidFetch = withPayment(fetch, {
   },
 });
 
-// Your agent calls any paid API — payment is handled automatically
 const data = await paidFetch('https://api.research.org/search?q=fusion').then(r => r.json());
+// 402 → policy check → pay → retry → done. Your code sees only the result.
 ```
-
-The agent doesn't know or care whether the API accepts MPP, x402, Stripe, or credits. The orchestration layer figures it out from the 402 response, selects the best method, checks the policy engine, pays, and retries.
-
-### For API providers
-
-You add one middleware line. Your API accepts payments from any agent, through any payment method you choose to support.
-
-```typescript
-import { createPaywall } from '@openagentpay/server-express';
-import { mpp } from '@openagentpay/adapter-mpp';
-import { x402 } from '@openagentpay/adapter-x402';
-import { credits } from '@openagentpay/adapter-credits';
-
-const paywall = createPaywall({
-  recipient: '0xYourWallet',
-  adapters: [
-    mpp({ networks: ['tempo', 'stripe'] }),   // MPP first
-    x402({ network: 'base' }),                 // x402 fallback
-    credits({ store }),                        // credits fallback
-  ],
-});
-
-app.get('/api/data', paywall({ price: '0.01' }), handler);
-```
-
-The 402 response advertises all available payment methods. The agent picks the one it supports. If the first fails, the client retries with the next. You get paid no matter which rail the agent uses.
-
----
-
-## Why an orchestration layer
-
-The machine payment landscape is fragmenting fast:
-
-| Protocol/Method | Backed By | Payment Rail | Best For |
-|----------------|-----------|-------------|----------|
-| **MPP** | Stripe, Tempo, Anthropic, OpenAI, Visa | Stablecoin, Cards, Lightning | Full-stack agent commerce |
-| **x402** | Coinbase | USDC on Base | Direct crypto micropayments |
-| **Visa MCP** | Visa | Tokenized card network | Enterprise, card-on-file |
-| **AgentCard** | AgentCard.sh | Prepaid virtual debit | Quick agent setup |
-| **Stripe** | Stripe | Cards, wallets, BNPL | Fiat metered billing |
-| **PayPal** | PayPal | PayPal accounts | Global reach |
-| **UPI** | NPCI, RBI | Bank-to-bank (India) | India, near-zero fees |
-| **Lightning** | Lightspark, LND | Bitcoin L2 | Instant micropayments |
-
-No single protocol will win. Different agents will have different wallets. Different API providers will accept different methods. Different regions will prefer different rails.
-
-**OpenAgentPay is the common layer that makes it all work together.**
-
-Without orchestration:
-- Agent with MPP wallet can't use an x402-only API
-- API accepting only Stripe can't serve an agent with USDC
-- Every new payment protocol requires new integration code on both sides
-- No unified spend policy across payment methods
-- No unified receipts across providers
-
-With OpenAgentPay:
-- Agent integrates once, pays on any rail
-- API integrates once, accepts any method
-- Policy engine governs spending across all methods
-- Unified receipt format regardless of payment rail
-- Intelligent routing picks the cheapest/fastest method
 
 ---
 
 ## The orchestration stack
 
-### Layer 1: Payment adapters (connectors)
+### Layer 1 — Connectors (8 payment rails)
 
-Each adapter connects to a specific payment protocol or processor. Adapters implement a common interface — `detect()`, `verify()`, `pay()`, `supports()`.
+| Adapter | Package | Connects to | Per-call viable? |
+|---------|---------|------------|-----------------|
+| **MPP** | `adapter-mpp` | Tempo blockchain, Stripe SPT, Lightning | Yes (~$0.001) |
+| **x402** | `adapter-x402` | USDC on Base via EIP-3009 | Yes (~$0.001) |
+| **Visa** | `adapter-visa` | Visa Intelligent Commerce MCP, AgentCard | Above ~$1.00 |
+| **Stripe** | `adapter-stripe` | Stripe PaymentIntents, Checkout credit bridge | Above $0.50 |
+| **PayPal** | `adapter-paypal` | PayPal Orders, OAuth2, credit bridge | Above ~$1.00 |
+| **UPI** | `adapter-upi` | Razorpay/Cashfree UPI mandates | Yes (near-zero fees in India) |
+| **Credits** | `adapter-credits` | Internal prepaid balance, atomic deductions | Yes ($0 per call) |
+| **Mock** | `adapter-mock` | Simulated payments | Yes (testing only) |
 
-| Adapter | Package | What it connects to |
-|---------|---------|-------------------|
-| MPP | `@openagentpay/adapter-mpp` | Machine Payments Protocol (Tempo, Stripe SPT, Lightning) |
-| x402 | `@openagentpay/adapter-x402` | x402 protocol (USDC on Base via EIP-3009) |
-| Visa | `@openagentpay/adapter-visa` | Visa Intelligent Commerce MCP + AgentCard |
-| Stripe | `@openagentpay/adapter-stripe` | Stripe PaymentIntents + credit bridge via Checkout |
-| PayPal | `@openagentpay/adapter-paypal` | PayPal Orders API + credit bridge |
-| UPI | `@openagentpay/adapter-upi` | UPI AutoPay mandates via Razorpay/Cashfree |
-| Credits | `@openagentpay/adapter-credits` | Internal prepaid balance system |
-| Mock | `@openagentpay/adapter-mock` | Simulated payments for testing |
+### Layer 2 — Smart Router
 
-### Layer 2: Routing and selection
-
-The server middleware tries adapters in declaration order. The client selects the first method its wallet supports. Future: intelligent routing based on cost, latency, success rate, and regional preference.
+The brain. Selects which adapter to use for each payment based on configurable strategy.
 
 ```typescript
-// Server: declare priority order
-adapters: [
-  mpp({ networks: ['tempo'] }),     // cheapest for crypto-native agents
-  x402({ network: 'base' }),         // direct USDC fallback
-  stripe({ secretKey: '...' }),      // fiat fallback
-  credits({ store }),                // prepaid balance fallback
-]
+import { createRouter } from '@openagentpay/router';
 
-// Client: wallet auto-selects from server's offered methods
-wallet: mppWallet({ network: 'tempo' })
-// If server offers MPP → use it. If not, try next supported method.
+const router = createRouter({
+  adapters: [
+    { adapter: mpp({ ... }), costPerTransaction: '0.001', currencies: ['USDC'] },
+    { adapter: x402({ ... }), costPerTransaction: '0.001', currencies: ['USDC'] },
+    { adapter: stripe({ ... }), costPerTransaction: '0.30', costPercentage: 2.9, minimumAmount: '0.50' },
+    { adapter: credits({ ... }), costPerTransaction: '0' },
+  ],
+  strategy: 'smart',   // composite: success rate × 0.5 + cost × 0.3 + latency × 0.2
+  cascade: true,        // auto-retry on next adapter if first fails
+});
+
+const decision = router.select({ amount: '0.01', currency: 'USDC' });
+// → { adapter: mppAdapter, reason: 'lowest cost with 98% success rate' }
 ```
 
-### Layer 3: Policy and governance
+**7 routing strategies:**
 
-The policy engine evaluates every payment before execution — regardless of payment method.
+| Strategy | How it selects |
+|----------|---------------|
+| `priority` | Static priority order |
+| `lowest-cost` | Cheapest viable adapter for the amount |
+| `highest-success` | Best recent success rate (sliding window) |
+| `lowest-latency` | Fastest recent response time |
+| `round-robin` | Even distribution across healthy adapters |
+| `weighted` | Probabilistic by weight (for A/B testing) |
+| `smart` | Composite score: success × 0.5 + cost × 0.3 + latency × 0.2 |
+
+**Health tracking:** Per-adapter success rate, average latency, p95 latency, failure counts — all in a sliding time window. Unhealthy adapters are automatically excluded.
+
+**Cascade failover:** If the selected adapter fails, the cascade manager automatically retries with the next-best adapter. Every attempt is logged.
+
+### Layer 3 — Policy Engine
+
+Governs spending across all payment methods. 11 rules evaluated before every payment.
 
 ```typescript
 policy: {
-  maxPerRequest: '1.00',
-  maxPerDay: '50.00',
-  maxPerProvider: '10.00',
+  maxPerRequest: '1.00',        // per-call cap
+  maxPerDay: '50.00',           // 24h rolling budget
+  maxPerProvider: '10.00',      // per-domain daily cap
   allowedDomains: ['*.trusted.dev'],
   blockedDomains: ['*.sketchy.io'],
-  approvalThreshold: '5.00',
+  approvalThreshold: '5.00',   // human approval above this
 }
 ```
 
-11 rules, strict evaluation order, rolling spend tracking. Works identically across x402, MPP, Stripe, PayPal, UPI, credits.
+### Layer 4 — Receipts & Observability
 
-### Layer 4: Receipts and observability
-
-Every payment — regardless of method — generates a standardized `AgentPaymentReceipt`. Same schema whether the agent paid with USDC, Stripe, or UPI.
+Every payment — regardless of rail — generates a standardized `AgentPaymentReceipt`. Same schema whether the agent paid with USDC, Visa, or UPI.
 
 ```typescript
-{
-  payment: {
-    amount: '0.01',
-    currency: 'USDC',
-    method: 'mpp',              // or 'x402', 'stripe', 'paypal', 'upi', 'visa', 'credits'
-    transaction_hash: '0x...',
-    status: 'settled'
-  },
-  // ... payer, payee, request, response, policy decision
-}
+const store = createReceiptStore({ type: 'file', path: './receipts' });
+const summary = await store.summary();
+// { totalCount: 1432, totalAmount: '14.32', byMethod: { mpp: {...}, x402: {...} } }
+const csv = await store.export({ format: 'csv' });
 ```
 
-Query, aggregate, export to CSV/JSON. Pipe to OpenTelemetry via `@openagentpay/otel-exporter`.
+OpenTelemetry export via `@openagentpay/otel-exporter`:
+- `openagentpay.payments.count` (Counter)
+- `openagentpay.payments.amount` (Counter)
+- `openagentpay.payments.latency` (Histogram)
 
-### Layer 5: MCP integration
+### Layer 5 — Server Middleware
 
-Paid MCP tools work with any payment method through the orchestration layer.
+One-line paywall for Express or Hono. Subscriptions built in.
 
 ```typescript
-import { paidTool } from '@openagentpay/mcp';
+// Express
+import { createPaywall } from '@openagentpay/server-express';
+app.get('/api/data', paywall({ price: '0.01' }), handler);
+app.use(paywall.routes()); // POST /openagentpay/subscribe, etc.
 
-const search = paidTool({
-  price: '0.01',
-  adapters: [mpp({ ... }), x402({ ... }), credits({ ... })],
-  recipient: '0x...',
-}, async (params) => ({ results: await engine.search(params.query) }));
+// Hono
+import { createPaywall } from '@openagentpay/server-hono';
+app.get('/api/data', paywall({ price: '0.01' }), handler);
+app.route('/', paywall.routes());
+```
+
+### Layer 6 — MCP Integration
+
+Paid MCP tools with transparent payment.
+
+```typescript
+// Server: charge per tool invocation
+const search = paidTool({ price: '0.01', adapters: [mpp(...)], recipient: '0x...' },
+  async (params) => ({ results: await engine.search(params.query) }));
+
+// Client: agent pays automatically
+const client = withMCPPayment(mcpClient, { wallet: mppWallet(...), policy: {...} });
+await client.callTool('search', { query: 'test' });
 ```
 
 ---
 
-## All 16 packages
+## All 17 packages
 
-| Package | Layer | Purpose |
-|---------|-------|---------|
-| `@openagentpay/core` | Foundation | Types, schemas, builders, parsers, 10 error classes. Zero deps. |
-| `@openagentpay/adapter-mpp` | Connector | MPP protocol — Tempo, Stripe SPT, Lightning. Sessions support. |
-| `@openagentpay/adapter-x402` | Connector | x402 protocol — USDC on Base via EIP-3009 + facilitator. |
-| `@openagentpay/adapter-visa` | Connector | Visa MCP + AgentCard virtual debit cards. |
-| `@openagentpay/adapter-stripe` | Connector | Stripe PaymentIntents + credit bridge via Checkout. |
-| `@openagentpay/adapter-paypal` | Connector | PayPal Orders + credit bridge. OAuth2 auth. |
-| `@openagentpay/adapter-upi` | Connector | UPI mandates via Razorpay/Cashfree. Near-zero fees. |
-| `@openagentpay/adapter-credits` | Connector | Prepaid balance with atomic deductions. |
-| `@openagentpay/adapter-mock` | Connector | Simulated payments for development. |
-| `@openagentpay/server-express` | Middleware | Express paywall + subscription management. |
-| `@openagentpay/server-hono` | Middleware | Hono paywall + subscription management. |
-| `@openagentpay/client` | Agent SDK | `withPayment(fetch)` — auto-handles 402, routing, retry. |
-| `@openagentpay/policy` | Governance | 11 spend rules. Domain globs. Rolling budget tracking. |
-| `@openagentpay/receipts` | Observability | Receipt storage (memory/file), query, CSV/JSON export. |
-| `@openagentpay/mcp` | Integration | Paid MCP tools — `paidTool()` server + `withMCPPayment()` client. |
-| `@openagentpay/otel-exporter` | Observability | OpenTelemetry spans + metrics for payments. |
+| # | Package | Layer | Description |
+|---|---------|-------|-------------|
+| 1 | `core` | Foundation | Types, schemas, builders, parsers, 10 error classes. Zero deps. |
+| 2 | `router` | Orchestration | Smart routing, health tracking, cost estimation, cascade failover. 7 strategies. |
+| 3 | `adapter-mpp` | Connector | MPP protocol — Tempo, Stripe SPT, Lightning. Sessions ("OAuth for money"). |
+| 4 | `adapter-x402` | Connector | x402 protocol — USDC on Base via EIP-3009 + facilitator. |
+| 5 | `adapter-visa` | Connector | Visa Intelligent Commerce MCP + AgentCard virtual debit cards. |
+| 6 | `adapter-stripe` | Connector | Stripe PaymentIntents + credit purchase via Checkout. |
+| 7 | `adapter-paypal` | Connector | PayPal Orders + credit purchase. OAuth2. |
+| 8 | `adapter-upi` | Connector | UPI AutoPay mandates via Razorpay/Cashfree. |
+| 9 | `adapter-credits` | Connector | Prepaid balance with atomic deductions. |
+| 10 | `adapter-mock` | Connector | Simulated payments for development/testing. |
+| 11 | `server-express` | Middleware | Express paywall + subscription endpoints. |
+| 12 | `server-hono` | Middleware | Hono paywall + subscription endpoints. |
+| 13 | `client` | Agent SDK | `withPayment(fetch)` — auto-402 handling, method selection, retry. |
+| 14 | `policy` | Governance | 11 spend rules. Domain globs. Rolling budget tracking. |
+| 15 | `receipts` | Observability | Receipt storage (memory/file), query, CSV/JSON export. |
+| 16 | `mcp` | Integration | Paid MCP tools — `paidTool()` + `withMCPPayment()`. |
+| 17 | `otel-exporter` | Observability | OpenTelemetry spans + metrics. |
 
 ---
 
 ## Payment method comparison
 
-| Method | Min Amount | Per-Call Fee | Settlement | Setup Required |
-|--------|-----------|-------------|-----------|----------------|
-| **MPP (Tempo)** | ~$0.001 | ~$0.001 | ~instant | Wallet |
-| **x402 (USDC)** | ~$0.001 | ~$0.001 | ~200ms | Wallet |
-| **MPP (Stripe)** | $0.50 | 2.9%+$0.30 | 2-7 days | Stripe account |
-| **Visa MCP** | ~$1.00 | Card network rates | 1-3 days | Visa enrollment |
-| **AgentCard** | $1.00 | Card rates | 1-3 days | AgentCard account |
-| **Stripe direct** | $0.50 | 2.9%+$0.30 | 2-7 days | Saved card |
-| **PayPal** | ~$1.00 | 3.49%+$0.49 | 1-3 days | Billing agreement |
-| **UPI** | Rs 1 (~$0.01) | ~0% under Rs 2,000 | T+1 | UPI mandate |
-| **Credits** | $0.001 | $0 | Instant | Pre-purchase |
-| **Lightning** | ~$0.001 | <1% | Instant | Lightning node |
-
----
-
-## The 402 flow
-
-Every payment method works through the same HTTP 402 protocol:
-
-```
-Agent  →  GET /api/data
-Server →  402 Payment Required
-          {
-            type: "payment_required",
-            pricing: { amount: "0.01", currency: "USDC" },
-            methods: [
-              { type: "mpp", networks: ["tempo", "stripe"], ... },
-              { type: "x402", network: "base", ... },
-              { type: "credits", purchase_url: "...", ... },
-              { type: "stripe", checkout_url: "...", ... }
-            ],
-            subscriptions: [
-              { id: "daily", amount: "5.00", period: "day", calls: "unlimited" }
-            ]
-          }
-Agent  →  [Select method → check policy → pay → retry]
-Agent  →  GET /api/data + Authorization/X-PAYMENT header
-Server →  200 OK + receipt
-```
-
-The orchestration layer manages method selection, policy checks, payment execution, retry with proof, and receipt generation — across all payment methods, identically.
+| Method | Min Amount | Per-Call Fee | Settlement | Best For |
+|--------|-----------|-------------|-----------|----------|
+| MPP (Tempo) | ~$0.001 | ~$0.001 | Instant | Crypto-native agents |
+| x402 (USDC) | ~$0.001 | ~$0.001 | ~200ms | Direct stablecoin |
+| MPP (Stripe) | $0.50 | 2.9%+$0.30 | 2-7 days | Fiat via Stripe |
+| Visa MCP | ~$1.00 | Card rates | 1-3 days | Enterprise card |
+| AgentCard | $1.00 | Card rates | 1-3 days | Quick virtual card |
+| Stripe | $0.50 | 2.9%+$0.30 | 2-7 days | Metered billing |
+| PayPal | ~$1.00 | 3.49%+$0.49 | 1-3 days | Global reach |
+| UPI | Rs 1 (~$0.01) | ~0% | T+1 | India |
+| Credits | $0.001 | $0 | Instant | Prepaid budgets |
 
 ---
 
@@ -291,21 +264,19 @@ cd examples/end-to-end-demo && pnpm start      # Full flow in one script
 | [Concepts](./docs/concepts.md) | 402 flow, adapters, policy, receipts |
 | [Server SDK](./docs/server-sdk.md) | Middleware, pricing, subscriptions, events |
 | [Client SDK](./docs/client-sdk.md) | withPayment, policy, spend tracking |
-| [Payment Adapters](./docs/payment-adapters.md) | All 8 adapters: mock, credits, x402, Stripe, PayPal, UPI + custom |
-| [MPP Integration](./docs/mpp-integration.md) | MPP protocol, Tempo, sessions, Stripe SPT |
+| [Payment Adapters](./docs/payment-adapters.md) | All 8 adapters + custom adapter guide |
+| [MPP Integration](./docs/mpp-integration.md) | MPP protocol, sessions, Tempo/Stripe/Lightning |
 | [Visa Integration](./docs/visa-integration.md) | Visa MCP, AgentCard virtual cards |
-| [Fiat Methods](./docs/fiat-payment-methods.md) | Stripe/PayPal/UPI architecture, fees, economics |
+| [Fiat Methods](./docs/fiat-payment-methods.md) | Stripe/PayPal/UPI architecture + fees |
 | [Getting Paid](./docs/getting-paid.md) | Wallet setup, fiat conversion, tax, regulatory |
 | [Policy Engine](./docs/policy-engine.md) | 11 rules, domain globs, spend tracking |
 | [Receipts](./docs/receipts.md) | Storage, querying, export |
-| [MCP Tools](./docs/mcp-integration.md) | Paid MCP tools — paidTool() + withMCPPayment() |
+| [MCP Tools](./docs/mcp-integration.md) | Paid MCP tools |
 
 ## Specifications
 
-| Spec | Defines |
-|------|---------|
-| [402 Response Format](./specs/402-response.md) | Machine-readable pricing discovery |
-| [Agent Payment Receipt](./specs/receipt.md) | Structured audit record |
+- [402 Response Format](./specs/402-response.md) — machine-readable pricing discovery
+- [Agent Payment Receipt](./specs/receipt.md) — structured audit record
 
 ---
 
@@ -317,9 +288,8 @@ cd OpenAgentPay
 pnpm install && pnpm build && pnpm test
 ```
 
+17 packages · 106 TypeScript files · 21,653 lines of code
 TypeScript · Turborepo · pnpm · Biome · Vitest · Apache 2.0
-
----
 
 ## Contributing
 

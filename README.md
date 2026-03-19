@@ -2,9 +2,9 @@
 
 ### Payment orchestration for the agentic internet.
 
-OpenAgentPay is a **server-side payment orchestration layer** for machine-to-machine commerce. API and MCP providers install it. Agents don't have to.
+OpenAgentPay is a **payment orchestration layer** for machine-to-machine commerce. It connects API providers to every agent payment method through a unified protocol — multi-protocol acceptance, intelligent routing, spend governance, and unified receipts.
 
-Any agent with an existing payment method — MPP wallet, x402 wallet, Visa card, Stripe account — can pay your API immediately. OpenAgentPay handles pricing discovery, payment verification, intelligent routing, receipts, and failover. The agent just sends a standard payment header.
+**API owners** install OpenAgentPay server-side. It returns a standardized 402 response with pricing and all accepted payment methods. **Agents** use the OpenAgentPay client SDK (lightweight, wraps `fetch`) or any client that understands the OpenAgentPay 402 format to discover pricing, select a method, pay, and retry.
 
 ```
                                 OpenAgentPay
@@ -63,47 +63,11 @@ That's it. The endpoint now:
 3. **Verifies** the payment through the appropriate adapter
 4. **Serves** the response and generates a receipt
 
-### The agent does NOT install OpenAgentPay
+### Agent-side: lightweight client SDK
 
-The agent already has a wallet. It already knows how to handle 402. OpenAgentPay's server-side adapters accept standard protocol headers:
-
-| Protocol | Header the agent sends | Who sends it |
-|----------|----------------------|-------------|
-| MPP | `Authorization: MPP <credential>` | Any MPP client (`mppx` SDK) |
-| x402 | `X-PAYMENT: <base64 EIP-3009>` | Any x402 client (`x402-fetch`, `x402-axios`) |
-| Visa | `X-VISA-TOKEN: <tokenized card>` | Visa MCP server, AgentCard |
-| Stripe | `X-STRIPE-SESSION: <intent ID>` | Any Stripe client |
-| PayPal | `X-PAYPAL-ORDER: <order ID>` | Any PayPal client |
-| UPI | `X-UPI-REFERENCE: <tx ref>` | Razorpay/Cashfree client |
-| Credits | `X-CREDITS: <account:sig>` | OpenAgentPay credit wallet |
-
-```bash
-# Agent using Coinbase's x402-fetch (no OpenAgentPay needed)
-import { wrapFetch } from 'x402-fetch';
-const fetch402 = wrapFetch(fetch, coinbaseWallet);
-await fetch402('https://api.example.com/data');
-
-# Agent using mppx SDK (no OpenAgentPay needed)
-npx mppx https://api.example.com/data
-
-# Both work against an OpenAgentPay-powered API. Zero agent-side dependency.
-```
-
-### The agent client SDK is optional
-
-OpenAgentPay offers an agent-side client SDK for developers who want features that native protocol clients don't provide:
-
-| Feature | Native client (mppx, x402-fetch) | OpenAgentPay client |
-|---------|----------------------------------|---------------------|
-| Handle 402, pay, retry | Yes | Yes |
-| Spend policy engine | No | Yes — 11 rules, domain globs, budgets |
-| Multi-method fallback | No (one protocol only) | Yes — try MPP, fall back to x402 |
-| Unified receipts across methods | No | Yes |
-| Cross-provider spend tracking | No | Yes |
-| Auto-subscribe optimization | No | Yes |
+The agent installs the OpenAgentPay client — a lightweight `fetch` wrapper that handles the unified 402 format:
 
 ```typescript
-// OPTIONAL: Agent installs OpenAgentPay client for advanced features
 import { withPayment } from '@openagentpay/client';
 import { mppWallet } from '@openagentpay/adapter-mpp';
 
@@ -116,8 +80,29 @@ const paidFetch = withPayment(fetch, {
   },
 });
 
+// Receives 402 → parses pricing → checks policy → selects method → pays → retries
 await paidFetch('https://api.trusted.dev/data');
 ```
+
+The client SDK handles:
+- Parsing OpenAgentPay's unified 402 response (pricing + all accepted methods)
+- Selecting the best payment method the agent's wallet supports
+- Policy enforcement (spend limits, domain rules, approval thresholds)
+- Payment execution via the wallet adapter
+- Automatic retry with payment proof
+- Receipt collection
+
+**Payment proof headers are protocol-standard** — once the agent pays, the header it sends (`X-PAYMENT` for x402, `Authorization: MPP` for MPP, etc.) uses the native protocol format. The server-side adapter verifies it against the real payment processor.
+
+| Protocol | Payment header sent by agent | Verified by |
+|----------|----------------------------|-------------|
+| MPP | `Authorization: MPP <credential>` | Tempo RPC / Stripe API |
+| x402 | `X-PAYMENT: <base64 EIP-3009>` | x402 facilitator |
+| Visa | `X-VISA-TOKEN: <tokenized card>` | Visa MCP / payment gateway |
+| Stripe | `X-STRIPE-SESSION: <intent ID>` | Stripe REST API |
+| PayPal | `X-PAYPAL-ORDER: <order ID>` | PayPal REST API |
+| UPI | `X-UPI-REFERENCE: <tx ref>` | Razorpay / Cashfree API |
+| Credits | `X-CREDITS: <account:sig>` | Internal credit store |
 
 ---
 
@@ -247,11 +232,11 @@ app.post('/api/process', paywall((req) => ({
 
 ## All 17 packages
 
-### Server-side (what API owners install)
+### Server-side (API owner installs)
 
 | Package | What it does |
 |---------|-------------|
-| `core` | Types, schemas, builders, parsers, 10 error classes. Zero deps. |
+| `core` | Types, schemas, builders, parsers, 10 error classes. Zero deps. Foundation for both sides. |
 | `router` | 14 routing strategies, health tracking, cost estimation, cascade failover. |
 | `server-express` | Express paywall middleware + subscription endpoints. |
 | `server-hono` | Hono paywall middleware + subscription endpoints. |
@@ -264,30 +249,32 @@ app.post('/api/process', paywall((req) => ({
 | `adapter-credits` | Prepaid balance with atomic deductions. |
 | `adapter-mock` | Simulated payments for development/testing. |
 | `receipts` | Receipt storage (memory/file), query, CSV/JSON export. |
+| `mcp` | `paidTool()` — wrap MCP tool handlers with payment verification. |
 | `otel-exporter` | OpenTelemetry spans + metrics. |
 
-### Agent-side (optional — for advanced features)
+### Agent-side (agent installs)
 
 | Package | What it does |
 |---------|-------------|
-| `client` | `withPayment(fetch)` — multi-method fallback, policy, receipts. |
-| `policy` | Standalone spend governance engine — 11 rules, budgets, domain globs. |
-| `mcp` | Paid MCP tools — `paidTool()` server wrapper + `withMCPPayment()` client. |
+| `client` | `withPayment(fetch)` — parses unified 402, selects method, pays, retries, collects receipts. |
+| `policy` | Spend governance engine — 11 rules, budgets, domain globs. Used by client internally. |
+| `mcp` | `withMCPPayment()` — wraps MCP client to handle paid tool invocations transparently. |
+| Wallet adapters | Same adapter packages as server — `adapter-mpp`, `adapter-x402`, etc. provide client-side `pay()` + `supports()`. |
 
 ---
 
 ## Payment method comparison
 
-| Method | Min Amount | Per-Call Fee | Settlement | Agent needs |
-|--------|-----------|-------------|-----------|-------------|
-| MPP (Tempo) | ~$0.001 | ~$0.001 | Instant | `mppx` SDK |
-| x402 (USDC) | ~$0.001 | ~$0.001 | ~200ms | `x402-fetch` or `x402-axios` |
-| Visa MCP | ~$1.00 | Card rates | 1-3 days | Visa MCP client |
-| AgentCard | $1.00 | Card rates | 1-3 days | AgentCard CLI |
-| Stripe | $0.50 | 2.9%+$0.30 | 2-7 days | Stripe SDK |
-| PayPal | ~$1.00 | 3.49%+$0.49 | 1-3 days | PayPal SDK |
-| UPI | Rs 1 | ~0% | T+1 | UPI app/SDK |
-| Credits | $0.001 | $0 | Instant | OpenAgentPay credit wallet |
+| Method | Min Amount | Per-Call Fee | Settlement | Agent wallet adapter |
+|--------|-----------|-------------|-----------|---------------------|
+| MPP (Tempo) | ~$0.001 | ~$0.001 | Instant | `@openagentpay/adapter-mpp` |
+| x402 (USDC) | ~$0.001 | ~$0.001 | ~200ms | `@openagentpay/adapter-x402` |
+| Visa MCP | ~$1.00 | Card rates | 1-3 days | `@openagentpay/adapter-visa` |
+| AgentCard | $1.00 | Card rates | 1-3 days | `@openagentpay/adapter-visa` |
+| Stripe | $0.50 | 2.9%+$0.30 | 2-7 days | `@openagentpay/adapter-stripe` |
+| PayPal | ~$1.00 | 3.49%+$0.49 | 1-3 days | `@openagentpay/adapter-paypal` |
+| UPI | Rs 1 | ~0% | T+1 | `@openagentpay/adapter-upi` |
+| Credits | $0.001 | $0 | Instant | `@openagentpay/adapter-credits` |
 
 ---
 

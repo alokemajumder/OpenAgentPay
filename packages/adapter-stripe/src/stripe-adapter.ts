@@ -425,7 +425,11 @@ export class StripeAdapter implements PaymentAdapter {
       )
     }
 
-    return response.json() as Promise<T>
+    try {
+      return await response.json() as T
+    } catch {
+      throw new FacilitatorUnavailableError('Invalid JSON response from Stripe API')
+    }
   }
 
   // ---------------------------------------------------------------------------

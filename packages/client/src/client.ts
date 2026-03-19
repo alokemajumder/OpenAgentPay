@@ -342,7 +342,7 @@ async function buildReceipt(
     payment: {
       amount: paymentRequired.pricing.amount,
       currency: paymentRequired.pricing.currency,
-      method: selectedMethod.type as "x402" | "credits" | "mock",
+      method: selectedMethod.type as AgentPaymentReceipt['payment']['method'],
       status: response.ok ? "settled" : "pending",
     },
     response: {
@@ -365,19 +365,21 @@ function extractPayTo(method: PaymentMethod): string {
       return method.pay_to;
     case "credits":
       return method.purchase_url;
+    case "mpp":
+      return (method as any).recipient ?? "unknown";
+    case "stripe":
+      return (method as any).publishable_key ?? (method as any).checkout_url ?? "unknown";
+    case "paypal":
+      return (method as any).checkout_url ?? (method as any).agreement_url ?? "unknown";
+    case "upi":
+      return (method as any).checkout_url ?? (method as any).mandate_url ?? "unknown";
+    case "visa":
+      return (method as any).mcp_url ?? (method as any).agentcard_url ?? "unknown";
     default:
-      return "unknown";
+      // Handles mock and any future method types
+      return (method as any).recipient ?? (method as any).pay_to ?? "unknown";
   }
 }
-
-// ---------------------------------------------------------------------------
-// Active Subscriptions Cache
-// ---------------------------------------------------------------------------
-
-/**
- * Simple in-memory cache of active subscription tokens by domain.
- */
-const activeSubscriptions = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
 // withPayment()
@@ -423,6 +425,7 @@ export function withPayment(
   config: ClientConfig,
 ): PaidFetch {
   const spendTracker = new SpendTracker();
+  const activeSubscriptions = new Map<string, string>();
 
   const paidFetch: PaidFetch = async (
     input: RequestInfo | URL,
@@ -443,7 +446,13 @@ export function withPayment(
     // -----------------------------------------------------------------------
     // Step 3: Parse the 402 body
     // -----------------------------------------------------------------------
-    const body = await response.json();
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      // 402 response body is not valid JSON — return the raw response
+      return response;
+    }
     const paymentRequired = parsePaymentRequired(body);
 
     const domain = extractDomain(

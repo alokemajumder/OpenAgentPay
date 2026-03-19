@@ -385,7 +385,11 @@ export class PayPalAdapter implements PaymentAdapter {
       )
     }
 
-    return response.json() as Promise<PayPalOrder>
+    try {
+      return await response.json() as PayPalOrder
+    } catch {
+      throw new FacilitatorUnavailableError('Invalid JSON response from PayPal API')
+    }
   }
 
   /**
@@ -429,7 +433,12 @@ export class PayPalAdapter implements PaymentAdapter {
       )
     }
 
-    const data = await response.json() as { access_token: string; expires_in: number }
+    let data: { access_token: string; expires_in: number }
+    try {
+      data = await response.json() as { access_token: string; expires_in: number }
+    } catch {
+      throw new FacilitatorUnavailableError('Invalid JSON response from PayPal OAuth2 endpoint')
+    }
 
     if (!data.access_token) {
       throw new FacilitatorUnavailableError(

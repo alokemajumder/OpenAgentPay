@@ -25,6 +25,16 @@ export class CostEstimator {
     const adapterType = entry.adapter.type;
     const txAmount = parseFloat(amount);
 
+    if (isNaN(txAmount) || txAmount < 0) {
+      return {
+        adapterType,
+        transactionCost: '0',
+        effectiveRate: '0',
+        isViable: false,
+        reason: `Invalid transaction amount: "${amount}"`,
+      };
+    }
+
     // Check currency support
     if (entry.currencies && entry.currencies.length > 0) {
       const upperCurrency = currency.toUpperCase();

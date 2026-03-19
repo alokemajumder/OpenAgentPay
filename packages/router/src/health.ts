@@ -74,7 +74,7 @@ export class HealthTracker {
    * Get computed health metrics for a single adapter.
    * Returns default healthy metrics if no data exists.
    */
-  getHealth(adapterType: string): AdapterHealth {
+  getHealth(adapterType: string, minSuccessRate?: number): AdapterHealth {
     const entries = this.pruneAndGet(adapterType);
 
     if (entries.length === 0) {
@@ -120,7 +120,7 @@ export class HealthTracker {
       lastFailureError: lastFailure?.error,
       lastSuccessAt: lastSuccess ? new Date(lastSuccess.timestamp).toISOString() : undefined,
       lastFailureAt: lastFailure ? new Date(lastFailure.timestamp).toISOString() : undefined,
-      isHealthy: successRate >= 0.5,
+      isHealthy: successRate >= (minSuccessRate ?? 0.5),
     };
   }
 

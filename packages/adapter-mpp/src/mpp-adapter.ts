@@ -118,6 +118,9 @@ export class MPPAdapter implements PaymentAdapter {
   /** In-memory challenge store for validation. */
   private readonly challengeStore = new Map<string, MPPChallenge>()
 
+  /** Maximum number of challenges to store before cleanup. */
+  private static readonly MAX_CHALLENGES = 10000
+
   /** Session manager for MPP sessions. */
   readonly sessionManager: MPPSessionManager
 
@@ -272,6 +275,25 @@ export class MPPAdapter implements PaymentAdapter {
       sessionSupported: this.sessionsSupported,
     })
 
+    // Cleanup: remove expired challenges to prevent memory exhaustion
+    if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
+      const now = Date.now()
+      for (const [id, ch] of this.challengeStore) {
+        if (new Date(ch.expiresAt).getTime() <= now) {
+          this.challengeStore.delete(id)
+        }
+      }
+      // If still over limit after cleanup, remove oldest
+      if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
+        const entries = [...this.challengeStore.entries()]
+        entries.sort((a, b) => new Date(a[1].expiresAt).getTime() - new Date(b[1].expiresAt).getTime())
+        const toRemove = entries.slice(0, entries.length - MPPAdapter.MAX_CHALLENGES + 1)
+        for (const [id] of toRemove) {
+          this.challengeStore.delete(id)
+        }
+      }
+    }
+
     // Store the challenge for later verification
     this.challengeStore.set(challenge.challengeId, challenge)
 
@@ -378,10 +400,11 @@ export class MPPAdapter implements PaymentAdapter {
       )
     }
 
-    const tx = (await response.json()) as {
-      status: string;
-      amount: string;
-      recipient: string;
+    let tx: { status: string; amount: string; recipient: string };
+    try {
+      tx = (await response.json()) as { status: string; amount: string; recipient: string }
+    } catch {
+      throw new Error('Invalid JSON response from Tempo RPC')
     }
 
     if (tx.status !== 'confirmed' && tx.status !== 'finalized') {
@@ -394,6 +417,15 @@ export class MPPAdapter implements PaymentAdapter {
       )
     }
 
+    // Verify payment amount meets pricing requirement
+    const requiredAmount = parseFloat(challenge.amount)
+    const paidAmount = parseFloat(tx.amount || '0')
+    if (paidAmount < requiredAmount) {
+      throw new Error(
+        `Payment amount ${tx.amount} is less than required ${challenge.amount}`
+      )
+    }
+
     return txHash
   }
 
@@ -402,7 +434,7 @@ export class MPPAdapter implements PaymentAdapter {
    */
   private async verifyStripePayment(
     credential: MPPCredential,
-    _challenge: MPPChallenge
+    challenge: MPPChallenge
   ): Promise<string> {
     const paymentIntentId = credential.proof.paymentIntentId
     if (!paymentIntentId) {
@@ -437,10 +469,24 @@ export class MPPAdapter implements PaymentAdapter {
       )
     }
 
-    const pi = (await response.json()) as { id: string; status: string }
+    let pi: { id: string; status: string; amount?: number };
+    try {
+      pi = (await response.json()) as { id: string; status: string; amount?: number }
+    } catch {
+      throw new Error('Invalid JSON response from Stripe API')
+    }
 
     if (pi.status !== 'succeeded') {
       throw new Error(`Stripe PaymentIntent status is '${pi.status}', expected 'succeeded'`)
+    }
+
+    // Verify amount (Stripe amounts are in cents)
+    const requiredCents = Math.round(parseFloat(challenge.amount) * 100)
+    const paidCents = typeof pi.amount === 'number' ? pi.amount : parseInt(String(pi.amount), 10)
+    if (paidCents < requiredCents) {
+      throw new Error(
+        `Payment amount insufficient. Required: ${requiredCents} cents, received: ${paidCents} cents`
+      )
     }
 
     return paymentIntentId
@@ -488,7 +534,12 @@ export class MPPAdapter implements PaymentAdapter {
       )
     }
 
-    const result = (await response.json()) as { settled: boolean }
+    let result: { settled: boolean };
+    try {
+      result = (await response.json()) as { settled: boolean }
+    } catch {
+      throw new Error('Invalid JSON response from Lightning node')
+    }
     if (!result.settled) {
       throw new Error('Lightning payment preimage verification failed: invoice not settled')
     }

@@ -412,7 +412,25 @@ export function createPaywall(config: PaywallConfig): Paywall {
 
           // Adapter claims this request carries payment — verify it
           const verifyStart = Date.now();
-          const verification = await adapter.verify(incomingReq, pricing);
+          let verification;
+          try {
+            verification = await adapter.verify(incomingReq, pricing);
+          } catch (verifyError) {
+            // Adapter threw (e.g., facilitator unavailable) — treat as failure, cascade to next
+            const errorMsg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+            lastVerificationError = errorMsg;
+            if (config.router) {
+              config.router.recordFailure(adapter.type, { error: errorMsg });
+            }
+            if (shouldEmit) {
+              emitter.emit('payment:failed', {
+                code: 'adapter_error',
+                message: errorMsg,
+                request: { method: req.method, url: resource, ip: req.ip },
+              });
+            }
+            continue; // cascade to next adapter
+          }
 
           if (verification.valid) {
             // Record success in router health tracking
@@ -457,7 +475,7 @@ export function createPaywall(config: PaywallConfig): Paywall {
                     },
                     response: {
                       status_code: captured.statusCode,
-                      content_hash: sha256(captured.body),
+                      content_hash: `sha256:${sha256(captured.body)}`,
                       content_length: captured.body.length,
                       latency_ms: captured.latencyMs,
                     },

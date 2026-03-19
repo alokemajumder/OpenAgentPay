@@ -334,6 +334,19 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)
 
+  packages/vault:
+    dependencies:
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.5.0)
+
 packages:
 
   '@biomejs/biome@1.9.4':

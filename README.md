@@ -118,7 +118,7 @@ const paywall = createPaywall({
   adapters: [
     mpp({ networks: ['tempo', 'stripe'] }),    // MPP agents
     x402({ network: 'base' }),                  // x402 agents
-    visa({ mode: 'tokenized' }),                // Visa agents
+    visa(),                                      // Visa agents
     stripe({ secretKey: '...' }),               // Stripe agents
     credits({ store }),                         // Prepaid credit agents
   ],
@@ -230,7 +230,7 @@ app.post('/api/process', paywall((req) => ({
 
 ---
 
-## All 17 packages
+## All 18 packages
 
 ### Server-side (API owner installs)
 
@@ -250,6 +250,7 @@ app.post('/api/process', paywall((req) => ({
 | `adapter-mock` | Simulated payments for development/testing. |
 | `receipts` | Receipt storage (memory/file), query, CSV/JSON export. |
 | `mcp` | `paidTool()` — wrap MCP tool handlers with payment verification. |
+| `vault` | Credential vault — encrypted storage for agent payment credentials. |
 | `otel-exporter` | OpenTelemetry spans + metrics. |
 
 ### Agent-side (agent installs)
@@ -352,7 +353,7 @@ cd OpenAgentPay
 pnpm install && pnpm build && pnpm test
 ```
 
-17 packages · 106 TypeScript files · 21,000+ lines
+18 packages · 106 TypeScript files · 21,000+ lines
 TypeScript · Turborepo · pnpm · Biome · Vitest · Apache 2.0
 
 ## Contributing

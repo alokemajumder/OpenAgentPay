@@ -28,7 +28,14 @@ export type RoutingStrategy =
   | 'lowest-latency'
   | 'round-robin'
   | 'weighted'
-  | 'smart';
+  | 'smart'
+  | 'adaptive'
+  | 'conditional'
+  | 'amount-tiered'
+  | 'geo-aware'
+  | 'time-aware'
+  | 'failover-only'
+  | 'custom';
 
 // ---------------------------------------------------------------------------
 // Adapter Entry
@@ -94,6 +101,27 @@ export interface RouterConfig {
 
   /** Minimum success rate to consider adapter healthy. Default: 0.5 */
   minSuccessRate?: number;
+
+  /** Exploration rate for 'adaptive' strategy (0.0-1.0). Default: 0.1 (10%) */
+  explorationRate?: number;
+
+  /** Rules for 'conditional' strategy. */
+  rules?: import('./strategies.js').RoutingRule[];
+
+  /** Amount tiers for 'amount-tiered' strategy. */
+  amountTiers?: import('./strategies.js').AmountTier[];
+
+  /** Region preferences for 'geo-aware' strategy. */
+  regionPreferences?: import('./strategies.js').RegionPreference[];
+
+  /** Time windows for 'time-aware' strategy. */
+  timeWindows?: import('./strategies.js').TimeWindow[];
+
+  /** Custom scoring function for 'custom' strategy. */
+  customScoring?: import('./strategies.js').CustomScoringFn;
+
+  /** Probe interval for 'failover-only' strategy (every N requests). Default: 20 */
+  probeInterval?: number;
 }
 
 // ---------------------------------------------------------------------------

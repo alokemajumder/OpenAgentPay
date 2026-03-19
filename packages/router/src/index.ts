@@ -31,6 +31,15 @@ export type {
   CascadeResult,
 } from './types.js';
 
+// Strategy configuration types
+export type {
+  RoutingRule,
+  AmountTier,
+  RegionPreference,
+  TimeWindow,
+  CustomScoringFn,
+} from './strategies.js';
+
 // Factory function
 import type { RouterConfig } from './types.js';
 import { SmartRouter } from './router.js';

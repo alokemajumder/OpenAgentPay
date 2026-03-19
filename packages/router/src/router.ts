@@ -33,6 +33,13 @@ import {
   roundRobinStrategy,
   weightedStrategy,
   smartStrategy,
+  adaptiveStrategy,
+  conditionalStrategy,
+  amountTieredStrategy,
+  geoAwareStrategy,
+  timeAwareStrategy,
+  failoverOnlyStrategy,
+  customStrategy,
 } from './strategies.js';
 
 // ---------------------------------------------------------------------------
@@ -63,8 +70,8 @@ import {
  */
 export class SmartRouter {
   private readonly config: Required<
-    Pick<RouterConfig, 'strategy' | 'cascade' | 'maxCascadeAttempts' | 'healthWindowMs' | 'minSuccessRate'>
-  > & Pick<RouterConfig, 'adapters'>;
+    Pick<RouterConfig, 'strategy' | 'cascade' | 'maxCascadeAttempts' | 'healthWindowMs' | 'minSuccessRate' | 'explorationRate' | 'probeInterval'>
+  > & Pick<RouterConfig, 'adapters' | 'rules' | 'amountTiers' | 'regionPreferences' | 'timeWindows' | 'customScoring'>;
 
   private readonly healthTracker: HealthTracker;
   private readonly costEstimator: CostEstimator;
@@ -72,6 +79,9 @@ export class SmartRouter {
 
   /** Round-robin counter — persists across calls. */
   private roundRobinCounter = { value: 0 };
+
+  /** Failover-only probe counter — persists across calls. */
+  private probeCounter = { value: 0 };
 
   constructor(config: RouterConfig) {
     if (!config.adapters || config.adapters.length === 0) {
@@ -85,6 +95,13 @@ export class SmartRouter {
       maxCascadeAttempts: config.maxCascadeAttempts ?? 3,
       healthWindowMs: config.healthWindowMs ?? 300_000,
       minSuccessRate: config.minSuccessRate ?? 0.5,
+      explorationRate: config.explorationRate ?? 0.1,
+      probeInterval: config.probeInterval ?? 20,
+      rules: config.rules,
+      amountTiers: config.amountTiers,
+      regionPreferences: config.regionPreferences,
+      timeWindows: config.timeWindows,
+      customScoring: config.customScoring,
     };
 
     this.healthTracker = new HealthTracker(this.config.healthWindowMs);
@@ -131,7 +148,7 @@ export class SmartRouter {
     );
     const health = this.healthTracker.getHealth(selectedAdapter.type);
 
-    const reason = this.buildReason(selectedAdapter, costEstimate, health, effectiveStrategy);
+    const reason = this.buildReason(selectedAdapter, costEstimate, health, effectiveStrategy, request);
 
     return {
       adapter: selectedAdapter,
@@ -335,11 +352,53 @@ export class SmartRouter {
           entries, request, this.healthTracker, this.costEstimator, this.config.minSuccessRate,
         );
 
-      default: {
-        // Exhaustiveness check
-        const _exhaustive: never = strategy;
+      case 'adaptive':
+        return adaptiveStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.minSuccessRate, this.config.explorationRate,
+        );
+
+      case 'conditional':
+        return conditionalStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.rules ?? [], this.config.minSuccessRate,
+        );
+
+      case 'amount-tiered':
+        return amountTieredStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.amountTiers ?? [], this.config.minSuccessRate,
+        );
+
+      case 'geo-aware':
+        return geoAwareStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.regionPreferences ?? [], this.config.minSuccessRate,
+        );
+
+      case 'time-aware':
+        return timeAwareStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.timeWindows ?? [], this.config.minSuccessRate,
+        );
+
+      case 'failover-only':
+        return failoverOnlyStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.minSuccessRate, this.probeCounter, this.config.probeInterval,
+        );
+
+      case 'custom':
+        if (!this.config.customScoring) {
+          throw new Error('Custom strategy requires customScoring function in RouterConfig');
+        }
+        return customStrategy(
+          entries, request, this.healthTracker, this.costEstimator,
+          this.config.customScoring,
+        );
+
+      default:
         return priorityStrategy(entries, request, this.healthTracker, this.costEstimator);
-      }
     }
   }
 
@@ -351,6 +410,7 @@ export class SmartRouter {
     cost: CostEstimate,
     health: AdapterHealth,
     strategy: RoutingStrategy,
+    request?: RouteRequest,
   ): string {
     const parts: string[] = [];
 
@@ -379,6 +439,27 @@ export class SmartRouter {
           `${(health.successRate * 100).toFixed(0)}% success, ` +
           `${health.avgLatencyMs.toFixed(0)}ms latency`,
         );
+        break;
+      case 'adaptive':
+        parts.push(`adaptive (${(this.config.explorationRate * 100).toFixed(0)}% exploration)`);
+        break;
+      case 'conditional':
+        parts.push('matched routing rule');
+        break;
+      case 'amount-tiered':
+        parts.push('amount-tier routing');
+        break;
+      case 'geo-aware':
+        parts.push(`geo-aware routing (region: ${request?.domain ?? 'unknown'})`);
+        break;
+      case 'time-aware':
+        parts.push(`time-aware routing (hour: ${new Date().getUTCHours()} UTC)`);
+        break;
+      case 'failover-only':
+        parts.push('primary adapter (failover mode)');
+        break;
+      case 'custom':
+        parts.push('custom scoring function');
         break;
     }
 

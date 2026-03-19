@@ -145,6 +145,21 @@ function evaluatePolicy(
   domain: string,
   spendTracker: SpendTracker,
 ): void {
+  // If an external policy engine is provided, use it instead of inline evaluation
+  if (config.policyEngine) {
+    const result = config.policyEngine.evaluate({
+      amount: paymentRequired.pricing.amount,
+      currency: paymentRequired.pricing.currency,
+      domain,
+    });
+    if (result.outcome === "deny") {
+      const reason = result.reason ?? "Denied by external policy engine";
+      config.onPolicyDenied?.(reason, paymentRequired.pricing);
+      throw new PolicyDeniedError(reason, "policyEngine");
+    }
+    return;
+  }
+
   const policy = config.policy;
   if (!policy) return;
 

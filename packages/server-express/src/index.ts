@@ -36,6 +36,7 @@ export type {
   Subscription,
   ReceiptsConfig,
   SubscriptionsConfig,
+  PaywallRouterConfig,
 } from './types.js';
 
 export { TypedEventEmitter } from './event-emitter.js';

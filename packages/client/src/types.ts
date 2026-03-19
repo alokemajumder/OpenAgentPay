@@ -230,6 +230,22 @@ export interface ClientConfig {
    */
   onPolicyDenied?: (reason: string, pricing: unknown) => void;
 
+  /**
+   * Optional external policy engine. If provided, overrides the inline
+   * policy evaluation. Use this to integrate the standalone
+   * `@openagentpay/policy` package for advanced policy rules.
+   *
+   * The engine must expose an `evaluate` method that returns an outcome.
+   * When outcome is `"deny"`, the payment is rejected with a `PolicyDeniedError`.
+   */
+  policyEngine?: {
+    evaluate: (request: {
+      amount: string;
+      currency: string;
+      domain: string;
+    }) => { outcome: string; reason?: string };
+  };
+
   /** Retry behavior after payment. */
   retry?: {
     /**

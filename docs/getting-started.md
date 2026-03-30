@@ -15,8 +15,12 @@ pnpm add @openagentpay/server-express @openagentpay/adapter-mock @openagentpay/c
 pnpm add @openagentpay/client @openagentpay/adapter-mock @openagentpay/core
 
 # Additional adapters (pick what you need)
-pnpm add @openagentpay/adapter-x402       # real USDC payments on Base
+pnpm add @openagentpay/adapter-x402       # USDC payments on Base
+pnpm add @openagentpay/adapter-mpp        # MPP protocol (Tempo/Stripe/Lightning)
+pnpm add @openagentpay/adapter-solana     # Solana SPL token payments
+pnpm add @openagentpay/adapter-lightning   # Lightning Network BOLT11
 pnpm add @openagentpay/adapter-credits    # prepaid credit system
+pnpm add @openagentpay/adapter-upi        # UPI payments (India)
 pnpm add @openagentpay/policy             # standalone spend governance
 pnpm add @openagentpay/receipts           # receipt storage + query
 pnpm add @openagentpay/mcp               # paid MCP tools
@@ -125,6 +129,6 @@ const paidFetch = withPayment(fetch, {
 - [Server SDK](./server-sdk.md) — subscriptions, events, multiple adapters
 - [Client SDK](./client-sdk.md) — policy configuration, spend tracking
 - [Payment Adapters](./payment-adapters.md) — mock, credits, x402
-- [Policy Engine](./policy-engine.md) — all 11 rules, domain matching, spend queries
+- [Policy Engine](./policy-engine.md) — all 12 rules, domain matching, identity, spend queries
 - [Receipts](./receipts.md) — storage, querying, CSV/JSON export
 - [MCP Integration](./mcp-integration.md) — paid MCP tools

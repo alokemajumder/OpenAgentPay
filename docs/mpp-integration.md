@@ -99,6 +99,82 @@ await sessions.chargeSession(session.sessionId, '0.01');
 await sessions.closeSession(session.sessionId);
 ```
 
+## Streaming Payments
+
+For long-running requests (LLM token generation, data processing), streaming payments charge incrementally against a session:
+
+```typescript
+import { mpp, MPPAdapter } from '@openagentpay/adapter-mpp';
+
+const adapter = mpp({
+  networks: ['tempo', 'stripe'],
+  sessionsSupported: true,
+  streamingSupported: true,
+});
+
+// Start a stream against an active session
+const stream = await adapter.startStream({
+  sessionId: session.sessionId,
+  amountPerChunk: '0.0001',
+  currency: 'USD',
+});
+
+// Charge per chunk/token
+for await (const chunk of generateTokens()) {
+  await adapter.chargeStreamChunk(stream.streamId, '0.0001');
+  yield chunk;
+}
+
+// End the stream
+const meter = await adapter.endStream(stream.streamId);
+// meter.chunksCharged, meter.totalCharged
+```
+
+## IETF Payment Auth Scheme
+
+OpenAgentPay's MPP adapter supports the IETF `Payment` HTTP auth scheme per `draft-ryan-httpauth-payment`:
+
+```typescript
+// Server generates WWW-Authenticate header
+const wwwAuth = adapter.buildWWWAuthenticate({
+  recipient: '0x...',
+  amount: '0.01',
+  currency: 'USD',
+  resource: '/api/data',
+});
+// → "Payment realm="0x...", challenge="base64...", networks="tempo,stripe", sessions=true, streaming=true"
+
+// Receipt in response header
+const receiptHeader = MPPAdapter.buildReceiptHeader({
+  id: 'mpp_receipt_123',
+  amount: '0.01',
+  currency: 'USD',
+  network: 'tempo',
+  status: 'settled',
+  ref: '0xabc...',
+});
+// → "Payment base64..."
+```
+
+## Session-First Wallet
+
+The MPP wallet can prefer sessions over per-call payments when available:
+
+```typescript
+import { mppWallet } from '@openagentpay/adapter-mpp';
+
+const wallet = mppWallet({
+  network: 'tempo',
+  tempoPrivateKey: process.env.KEY,
+  preferSessions: true,            // auto-create sessions when available
+  defaultSessionBudget: '10.00',   // $10 per session
+  defaultSessionDuration: '1h',    // 1 hour sessions
+});
+
+// When paying, wallet automatically creates/reuses sessions
+// Falls back to per-call payment if sessions unavailable
+```
+
 ## MPP + OpenAgentPay Advantages
 
 Using MPP through OpenAgentPay gives you:

@@ -207,13 +207,55 @@ UPI is the cheapest payment rail available:
 | Rs 1,000 ($12) | Rs 0 (below Rs 2,000) | 0% |
 | Rs 5,000 ($60) | Rs 100 | 2% |
 
+### UPI Reserve Pay (SBMD) — For Agentic Payments
+
+NPCI's UPI Reserve Pay uses Single Block Multi Debit (SBMD) — a budget-envelope model purpose-built for AI agent transactions. Unlike AutoPay mandates (fixed frequency), Reserve Pay lets agents debit freely within a pre-authorized limit.
+
+| Feature | AutoPay Mandate | Reserve Pay (SBMD) |
+|---------|----------------|-------------------|
+| Model | Fixed frequency (daily/weekly/monthly) | On-demand (agent-initiated) |
+| Auth | PIN per mandate creation + notifications per debit | PIN once at creation, no per-txn auth |
+| Max amount | Rs 15,000 per debit | Rs 10,000 aggregate (90-day block) |
+| Best for | Recurring subscriptions | Variable API usage by agents |
+
+```typescript
+import { UPIReservePayManager } from '@openagentpay/adapter-upi';
+
+const reservePay = new UPIReservePayManager({
+  gateway: 'razorpay',
+  apiKey: process.env.RAZORPAY_KEY_ID!,
+  apiSecret: process.env.RAZORPAY_KEY_SECRET!,
+});
+
+// Create spending block (user approves once via UPI app)
+const block = await reservePay.createBlock({
+  payerIdentifier: 'agent-1',
+  amount: 500_000,  // Rs 5,000 in paise
+  description: 'API usage budget',
+  expiryDays: 30,
+});
+
+// Agent debits freely — no PIN, no OTP
+await reservePay.executeDebit(block.blockId, 100, 'API call');  // Rs 1
+await reservePay.executeDebit(block.blockId, 100, 'API call');  // Rs 1
+// ... repeat as needed within the block limit
+```
+
+### Additional UPI Features
+
+OpenAgentPay's UPI adapter also supports:
+- **QR code generation** — create UPI QR codes for one-time payments via Razorpay/Cashfree
+- **Refunds** — full or partial refunds via gateway APIs
+- **Webhook verification** — HMAC-SHA256 signature verification with timing-safe comparison
+- **Razorpay MCP server** — 48+ payment tools via JSON-RPC 2.0 for AI agent integration
+
 ### Best UPI Strategy for OpenAgentPay
 
-1. Set up a variable-amount UPI mandate via Razorpay or Cashfree (one-time, agent operator enters UPI PIN)
-2. Aggregate API usage daily or weekly
-3. Execute debit against mandate for aggregated amount
-4. Keep individual debits under Rs 5,000 to avoid additional authentication
-5. Near-zero cost for most API billing scenarios
+**For AI agents (recommended):** Use UPI Reserve Pay (SBMD) — create a spending block, agent debits on demand without per-call authentication.
+
+**For recurring billing:** Use AutoPay mandates — set up a variable-amount mandate via Razorpay/Cashfree.
+
+**For one-time payments:** Use QR codes or payment links.
 
 ---
 
@@ -263,11 +305,15 @@ Each fiat payment method becomes an OpenAgentPay adapter:
 
 ```
 PaymentAdapter
- ├── adapter-x402        (direct, per-call, USDC)
+ ├── adapter-mpp         (MPP protocol — Tempo/Stripe/Lightning, sessions)
+ ├── adapter-x402        (direct, per-call, USDC on Base)
+ ├── adapter-solana      (SPL tokens on Solana)
+ ├── adapter-lightning    (BOLT11 invoices via LND)
  ├── adapter-credits     (prepaid balance, any funding source)
  ├── adapter-stripe      (metered billing or Customer Balance)
  ├── adapter-paypal      (billing agreement + aggregated charges)
- └── adapter-upi         (mandate + aggregated debits via Razorpay/Cashfree)
+ ├── adapter-upi         (Reserve Pay SBMD + mandates via Razorpay/Cashfree)
+ └── adapter-visa        (Visa MCP + AgentCard)
 ```
 
 The credits adapter is the most universal bridge — agents can purchase credits via any payment method (Stripe, PayPal, UPI, crypto), and per-call deductions are instant and free.

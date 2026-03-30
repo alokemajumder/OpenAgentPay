@@ -585,7 +585,7 @@ cd OpenAgentPay
 pnpm install && pnpm build && pnpm test
 ```
 
-26 packages · 155 TypeScript source files · 68,000+ lines · 172 tests
+26 packages · 155 TypeScript source files · 68,000+ lines · 264 tests
 TypeScript · Turborepo · pnpm · Biome · Vitest · Apache 2.0
 
 ## Contributing

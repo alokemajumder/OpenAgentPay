@@ -52,6 +52,7 @@ if (result.approved) {
 | `maxSubscriptionPeriod` | `string` | Longest subscription period allowed |
 | `autoSubscribe` | `boolean` | Allow auto-optimization to subscriptions |
 | `testMode` | `boolean` | Only allow mock payments |
+| `identityRequired` | `boolean \| string[]` | Require valid agent attestation (optionally of specific types) |
 
 ## Rule Evaluation Order
 
@@ -61,14 +62,31 @@ Rules are checked in this order. First denial stops evaluation:
 2. `blockedDomains` — deny if domain matches
 3. `allowedDomains` — deny if domain doesn't match
 4. `allowedCurrencies` — deny if currency not allowed
-5. `maxPerRequest` — deny if amount exceeds limit
-6. `maxPerDay` — deny if daily total would exceed
-7. `maxPerSession` — deny if session total would exceed
-8. `maxPerProvider` — deny if provider total would exceed
-9. `maxSubscription` — deny subscription if too expensive
-10. `maxSubscriptionPeriod` — deny subscription if too long
-11. `approvalThreshold` — flag for human approval if above threshold
-12. All pass → **APPROVE**
+5. `identityRequired` — deny if no valid attestation present
+6. `maxPerRequest` — deny if amount exceeds limit
+7. `maxPerDay` — deny if daily total would exceed
+8. `maxPerSession` — deny if session total would exceed
+9. `maxPerProvider` — deny if provider total would exceed
+10. `maxSubscription` — deny subscription if too expensive
+11. `maxSubscriptionPeriod` — deny subscription if too long
+12. `approvalThreshold` — flag for human approval if above threshold
+13. All pass → **APPROVE**
+
+## Agent Identity Requirement
+
+The `identityRequired` rule integrates with the DID-based agent identity system from `@openagentpay/vault`:
+
+```typescript
+import { AgentIdentityManager } from '@openagentpay/vault';
+
+const policy = createPolicy({
+  maxPerRequest: '1.00',
+  identityRequired: true,  // require any valid attestation
+  // OR: identityRequired: ['payment-authorization']  // require specific type
+});
+```
+
+Attestations must be non-expired and have valid Ed25519 signatures. See the [vault package](../packages/vault/README.md) for creating DIDs and attestations.
 
 ## Domain Glob Patterns
 

@@ -68,6 +68,8 @@ export function createChallenge(config: {
   networks: string[];
   ttlSeconds?: number;
   sessionSupported?: boolean;
+  streamingSupported?: boolean;
+  resource?: string;
   metadata?: Record<string, string>;
 }): MPPChallenge {
   const ttl = config.ttlSeconds ?? 300
@@ -82,6 +84,8 @@ export function createChallenge(config: {
     networks: config.networks,
     expiresAt,
     sessionSupported: config.sessionSupported,
+    streamingSupported: config.streamingSupported,
+    resource: config.resource,
     metadata: config.metadata,
   }
 }

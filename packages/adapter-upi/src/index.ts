@@ -86,10 +86,23 @@
 export { UPIAdapter } from './upi-adapter.js'
 export { UPIMandateManager } from './upi-mandate.js'
 export { UPICreditBridge } from './upi-credit-bridge.js'
+export { UPIReservePayManager } from './upi-reserve-pay.js'
+export { UPIWebhookVerifier } from './webhook.js'
+export { UPIQRCodeManager } from './upi-qr.js'
+export { UPIRefundManager } from './upi-refund.js'
 export type {
   UPIAdapterConfig,
   UPIMandateConfig,
   UPICreditBridgeConfig,
+  UPIReservePayConfig,
+  ReservePayBlock,
+  ReservePayDebitResult,
+  WebhookVerifierConfig,
+  WebhookEvent,
+  UPIQRConfig,
+  QRCodeResult,
+  UPIRefundConfig,
+  RefundResult,
 } from './types.js'
 
 // ---------------------------------------------------------------------------

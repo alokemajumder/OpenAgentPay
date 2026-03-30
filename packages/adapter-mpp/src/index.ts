@@ -67,6 +67,10 @@ export type {
   MPPSessionConfig,
   MPPSessionChargeResult,
   MPPSessionCloseResult,
+  MPPStreamConfig,
+  MPPStreamMeter,
+  MPPWWWAuthenticateParams,
+  MPPPaymentReceiptHeader,
 } from './types.js'
 
 // ---------------------------------------------------------------------------

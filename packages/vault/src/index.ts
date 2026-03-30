@@ -33,6 +33,7 @@
 export { Vault } from './vault.js';
 export { InMemoryVaultStore } from './memory-store.js';
 export { EncryptedVaultStore } from './encrypted-store.js';
+export { AgentIdentityManager } from './identity.js';
 
 export type {
   VaultConfig,

@@ -40,8 +40,8 @@ import type {
 
 import { FacilitatorUnavailableError } from '@openagentpay/core'
 
-import type { MPPAdapterConfig } from './types.js'
-import { createChallenge, isChallengeExpired } from './challenge.js'
+import type { MPPAdapterConfig, MPPStreamConfig, MPPStreamMeter, MPPWWWAuthenticateParams, MPPPaymentReceiptHeader } from './types.js'
+import { createChallenge, isChallengeExpired, serializeChallenge } from './challenge.js'
 import { deserializeCredential, validateCredentialProof } from './credential.js'
 import { MPPSessionManager } from './mpp-session.js'
 import type { MPPChallenge, MPPCredential } from './types.js'
@@ -58,6 +58,27 @@ const DEFAULT_CHALLENGE_TTL = 300
 
 /** Stripe API base URL. */
 const STRIPE_API_BASE = 'https://api.stripe.com/v1'
+
+// ---------------------------------------------------------------------------
+// Decimal Arithmetic Helpers
+// ---------------------------------------------------------------------------
+
+function toMicro(amount: string): bigint {
+  const parts = amount.split('.')
+  const whole = parts[0] ?? '0'
+  const frac = (parts[1] ?? '').padEnd(6, '0').slice(0, 6)
+  return BigInt(whole) * 1000000n + BigInt(frac)
+}
+
+function fromMicro(micro: bigint): string {
+  const isNegative = micro < 0n
+  const abs = isNegative ? -micro : micro
+  const whole = abs / 1000000n
+  const frac = (abs % 1000000n).toString().padStart(6, '0')
+  const trimmed = frac.replace(/0+$/, '').padEnd(2, '0')
+  const sign = isNegative ? '-' : ''
+  return `${sign}${whole}.${trimmed}`
+}
 
 // ---------------------------------------------------------------------------
 // Receipt ID Generation
@@ -110,6 +131,7 @@ export class MPPAdapter implements PaymentAdapter {
   private readonly networks: string[]
   private readonly challengeTtlSeconds: number
   private readonly sessionsSupported: boolean
+  private readonly streamingSupported: boolean
   private readonly tempoRpcUrl?: string
   private readonly stripeSecretKey?: string
   private readonly lightningNodeUrl?: string
@@ -120,6 +142,9 @@ export class MPPAdapter implements PaymentAdapter {
 
   /** Maximum number of challenges to store before cleanup. */
   private static readonly MAX_CHALLENGES = 10000
+
+  /** Active streaming meters. */
+  private readonly streamMeters = new Map<string, MPPStreamMeter>()
 
   /** Session manager for MPP sessions. */
   readonly sessionManager: MPPSessionManager
@@ -133,6 +158,7 @@ export class MPPAdapter implements PaymentAdapter {
     this.networks = config.networks ?? DEFAULT_NETWORKS
     this.challengeTtlSeconds = config.challengeTtlSeconds ?? DEFAULT_CHALLENGE_TTL
     this.sessionsSupported = config.sessionsSupported ?? false
+    this.streamingSupported = config.streamingSupported ?? false
     this.tempoRpcUrl = config.tempoRpcUrl
     this.stripeSecretKey = config.stripeSecretKey
     this.lightningNodeUrl = config.lightningNodeUrl
@@ -273,29 +299,11 @@ export class MPPAdapter implements PaymentAdapter {
       networks: this.networks,
       ttlSeconds: this.challengeTtlSeconds,
       sessionSupported: this.sessionsSupported,
+      streamingSupported: this.streamingSupported,
+      resource: config['resource'] as string | undefined,
     })
 
-    // Cleanup: remove expired challenges to prevent memory exhaustion
-    if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
-      const now = Date.now()
-      for (const [id, ch] of this.challengeStore) {
-        if (new Date(ch.expiresAt).getTime() <= now) {
-          this.challengeStore.delete(id)
-        }
-      }
-      // If still over limit after cleanup, remove oldest
-      if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
-        const entries = [...this.challengeStore.entries()]
-        entries.sort((a, b) => new Date(a[1].expiresAt).getTime() - new Date(b[1].expiresAt).getTime())
-        const toRemove = entries.slice(0, entries.length - MPPAdapter.MAX_CHALLENGES + 1)
-        for (const [id] of toRemove) {
-          this.challengeStore.delete(id)
-        }
-      }
-    }
-
-    // Store the challenge for later verification
-    this.challengeStore.set(challenge.challengeId, challenge)
+    this.storeChallenge(challenge)
 
     const method: MPPPaymentMethod = {
       type: 'mpp',
@@ -336,6 +344,166 @@ export class MPPAdapter implements PaymentAdapter {
       'MPPAdapter.pay() is not available on the server side. ' +
       'Use MPPWallet for client-side payment execution.'
     )
+  }
+
+  // ---------------------------------------------------------------------------
+  // IETF Payment Auth Scheme
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Build the `WWW-Authenticate: Payment ...` header value per
+   * IETF draft-ryan-httpauth-payment.
+   *
+   * @param config - Adapter config with recipient and pricing info
+   * @returns The WWW-Authenticate header value string
+   */
+  buildWWWAuthenticate(config: AdapterConfig): string {
+    const challenge = createChallenge({
+      amount: (config['amount'] as string) ?? '0.00',
+      currency: (config['currency'] as string) ?? 'USD',
+      recipient: config.recipient,
+      networks: this.networks,
+      ttlSeconds: this.challengeTtlSeconds,
+      sessionSupported: this.sessionsSupported,
+      streamingSupported: this.streamingSupported,
+      resource: config['resource'] as string | undefined,
+    })
+
+    this.storeChallenge(challenge)
+
+    const encoded = serializeChallenge(challenge)
+    const parts = [
+      `realm="${config.recipient}"`,
+      `challenge="${encoded}"`,
+      `networks="${this.networks.join(',')}"`,
+    ]
+
+    if (this.sessionsSupported) {
+      parts.push('sessions=true')
+    }
+    if (this.streamingSupported) {
+      parts.push('streaming=true')
+    }
+
+    return `Payment ${parts.join(', ')}`
+  }
+
+  /**
+   * Build a `Payment-Receipt` response header value from receipt data.
+   */
+  static buildReceiptHeader(receipt: MPPPaymentReceiptHeader): string {
+    const encoded = Buffer.from(JSON.stringify(receipt), 'utf-8').toString('base64')
+    return `Payment ${encoded}`
+  }
+
+  // ---------------------------------------------------------------------------
+  // Streaming Support
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Start a streaming payment meter that charges incrementally
+   * against an active session.
+   *
+   * @param config - Streaming configuration
+   * @returns The stream meter
+   */
+  async startStream(config: MPPStreamConfig): Promise<MPPStreamMeter> {
+    // Validate the session exists and is active
+    await this.sessionManager.getSessionStatus(config.sessionId)
+
+    const streamId = `mpp_stream_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+
+    const meter: MPPStreamMeter = {
+      streamId,
+      sessionId: config.sessionId,
+      chunksCharged: 0,
+      totalCharged: '0.00',
+      active: true,
+    }
+
+    this.streamMeters.set(streamId, meter)
+    return meter
+  }
+
+  /**
+   * Record a chunk in a streaming payment and charge the session.
+   *
+   * @param streamId - The stream to charge
+   * @param amount - Amount per chunk
+   * @returns Updated meter state
+   */
+  async chargeStreamChunk(streamId: string, amount: string): Promise<MPPStreamMeter> {
+    const meter = this.streamMeters.get(streamId)
+    if (!meter) {
+      throw new Error(`Stream not found: ${streamId}`)
+    }
+    if (!meter.active) {
+      throw new Error(`Stream is no longer active: ${streamId}`)
+    }
+
+    // Charge the session
+    await this.sessionManager.chargeSession(meter.sessionId, amount)
+
+    // Update meter
+    meter.chunksCharged++
+    const currentMicro = toMicro(meter.totalCharged)
+    const chargeMicro = toMicro(amount)
+    meter.totalCharged = fromMicro(currentMicro + chargeMicro)
+
+    return { ...meter }
+  }
+
+  /**
+   * End a streaming payment.
+   *
+   * @param streamId - The stream to close
+   * @returns Final meter state
+   */
+  async endStream(streamId: string): Promise<MPPStreamMeter> {
+    const meter = this.streamMeters.get(streamId)
+    if (!meter) {
+      throw new Error(`Stream not found: ${streamId}`)
+    }
+
+    meter.active = false
+    const result = { ...meter }
+    this.streamMeters.delete(streamId)
+    return result
+  }
+
+  /**
+   * Get the current state of a stream meter.
+   */
+  getStreamMeter(streamId: string): MPPStreamMeter | undefined {
+    const meter = this.streamMeters.get(streamId)
+    return meter ? { ...meter } : undefined
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: Challenge Store Management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Store a challenge with automatic cleanup when at capacity.
+   */
+  private storeChallenge(challenge: MPPChallenge): void {
+    if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
+      const now = Date.now()
+      for (const [id, ch] of this.challengeStore) {
+        if (new Date(ch.expiresAt).getTime() <= now) {
+          this.challengeStore.delete(id)
+        }
+      }
+      if (this.challengeStore.size >= MPPAdapter.MAX_CHALLENGES) {
+        const entries = [...this.challengeStore.entries()]
+        entries.sort((a, b) => new Date(a[1].expiresAt).getTime() - new Date(b[1].expiresAt).getTime())
+        const toRemove = entries.slice(0, entries.length - MPPAdapter.MAX_CHALLENGES + 1)
+        for (const [id] of toRemove) {
+          this.challengeStore.delete(id)
+        }
+      }
+    }
+    this.challengeStore.set(challenge.challengeId, challenge)
   }
 
   // ---------------------------------------------------------------------------

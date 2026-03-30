@@ -13,6 +13,7 @@ import type {
   PolicyConfig,
   PolicyEvaluation,
   PolicyRule,
+  AgentAttestation,
 } from "@openagentpay/core";
 
 import { SpendTracker } from "./spend-tracker.js";
@@ -28,6 +29,7 @@ import {
   evaluateMaxSubscription,
   evaluateMaxSubscriptionPeriod,
   evaluateApprovalThreshold,
+  evaluateIdentityRequired,
 } from "./rules/index.js";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +64,12 @@ export interface PaymentRequest {
    * When `testMode` is enabled, real payments are denied.
    */
   isMock?: boolean;
+
+  /**
+   * Agent attestations attached to this payment request.
+   * Required when the `identityRequired` policy rule is enabled.
+   */
+  attestations?: AgentAttestation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +160,7 @@ export class PolicyEngine {
       ["max_subscription", () => evaluateMaxSubscription(this.config, request)],
       ["max_subscription_period", () => evaluateMaxSubscriptionPeriod(this.config, request)],
       ["approval_threshold", () => evaluateApprovalThreshold(this.config, request)],
+      ["identity_required", () => evaluateIdentityRequired(this.config, request)],
     ];
 
     for (const [ruleName, evaluator] of pipeline) {

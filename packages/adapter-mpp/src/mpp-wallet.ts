@@ -79,6 +79,12 @@ export class MPPWallet implements PaymentAdapter {
   private readonly lightningNodeUrl?: string
   private readonly lightningMacaroon?: string
   private readonly payerIdentifier: string
+  private readonly preferSessions: boolean
+  private readonly defaultSessionBudget: string
+  private readonly defaultSessionDuration: string
+
+  /** Active sessions keyed by server URL. */
+  private readonly activeSessions = new Map<string, MPPSession>()
 
   /**
    * Creates a new MPPWallet.
@@ -94,6 +100,9 @@ export class MPPWallet implements PaymentAdapter {
     this.lightningNodeUrl = config.lightningNodeUrl
     this.lightningMacaroon = config.lightningMacaroon
     this.payerIdentifier = config.payerIdentifier ?? 'mpp-agent'
+    this.preferSessions = config.preferSessions ?? false
+    this.defaultSessionBudget = config.defaultSessionBudget ?? '10.00'
+    this.defaultSessionDuration = config.defaultSessionDuration ?? '1h'
   }
 
   /**
@@ -174,6 +183,14 @@ export class MPPWallet implements PaymentAdapter {
       throw new Error('MPP payment method missing challenge_id')
     }
 
+    // If sessions are supported and preferred, try session-based payment first
+    if (this.preferSessions && mppMethod.sessions_supported && mppMethod.server_url) {
+      const sessionProof = await this.trySessionPayment(mppMethod, pricing)
+      if (sessionProof) {
+        return sessionProof
+      }
+    }
+
     // Execute payment on the selected network
     let proof: Record<string, string>
     try {
@@ -200,6 +217,80 @@ export class MPPWallet implements PaymentAdapter {
     return {
       header: 'Authorization',
       value: headerValue,
+    }
+  }
+
+  /**
+   * Try to pay using an existing or newly created session.
+   * Returns null if session payment is not possible.
+   */
+  private async trySessionPayment(
+    method: MPPPaymentMethod,
+    pricing: Pricing
+  ): Promise<PaymentProof | null> {
+    const serverUrl = method.server_url!
+
+    // Check for existing active session
+    let session = this.activeSessions.get(serverUrl)
+
+    if (session) {
+      // Verify session is still active
+      try {
+        session = await this.getSessionStatus(serverUrl, session.sessionId)
+        if (!session.active) {
+          this.activeSessions.delete(serverUrl)
+          session = undefined
+        }
+      } catch {
+        this.activeSessions.delete(serverUrl)
+        session = undefined
+      }
+    }
+
+    // Create new session if none exists
+    if (!session) {
+      try {
+        session = await this.createSession(serverUrl, {
+          maxAmount: this.defaultSessionBudget,
+          currency: pricing.currency,
+          network: this.network,
+          recipient: method.recipient,
+          duration: this.defaultSessionDuration,
+        })
+        this.activeSessions.set(serverUrl, session)
+      } catch {
+        return null // Fall back to per-call payment
+      }
+    }
+
+    // Pay via session — return session header
+    return {
+      header: 'Authorization',
+      value: `MPP-Session ${session.sessionId}`,
+    }
+  }
+
+  /**
+   * Get all active sessions.
+   */
+  getActiveSessions(): Map<string, MPPSession> {
+    return new Map(this.activeSessions)
+  }
+
+  /**
+   * Close all active sessions and release budgets.
+   */
+  async closeAllSessions(): Promise<void> {
+    for (const [serverUrl, session] of this.activeSessions) {
+      try {
+        await fetch(`${serverUrl}/mpp/sessions/${session.sessionId}/close`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      } catch {
+        // Best-effort cleanup
+      }
+      this.activeSessions.delete(serverUrl)
     }
   }
 

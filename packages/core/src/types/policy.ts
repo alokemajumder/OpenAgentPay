@@ -27,7 +27,8 @@ export type PolicyRule =
   | "approval_threshold"
   | "max_subscription"
   | "max_subscription_period"
-  | "test_mode";
+  | "test_mode"
+  | "identity_required";
 
 // ---------------------------------------------------------------------------
 // Policy Configuration
@@ -105,6 +106,15 @@ export interface PolicyConfig {
    * Prevents accidental real-money transactions during development.
    */
   testMode?: boolean;
+
+  /**
+   * When `true`, requires a valid agent attestation on every payment request.
+   * Optionally specify an array of required attestation types.
+   *
+   * - `true` — any valid attestation satisfies the rule
+   * - `string[]` — at least one attestation of each listed type is required
+   */
+  identityRequired?: boolean | string[];
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,53 @@
+{
+  "name": "@openagentpay/razorpay-mcp",
+  "version": "0.1.0",
+  "description": "Razorpay MCP server integration for OpenAgentPay — access 48+ Razorpay payment tools through AI agent orchestration",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*",
+    "@openagentpay/adapter-upi": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-agents",
+    "payments",
+    "razorpay",
+    "mcp",
+    "model-context-protocol",
+    "upi",
+    "india-payments",
+    "payment-orchestration"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagentpay/openagentpay",
+    "directory": "packages/razorpay-mcp"
+  }
+}

@@ -27,6 +27,8 @@ export type {
   PayPalPaymentMethod,
   UPIPaymentMethod,
   MPPPaymentMethod,
+  SolanaPaymentMethod,
+  LightningPaymentMethod,
   VisaPaymentMethod,
   SubscriptionPlan,
   AgentPaymentReceipt,
@@ -51,6 +53,12 @@ export type {
   PolicyEvaluation,
   PolicyDecisionOutcome,
   PolicyRule,
+  AgentPayDiscovery,
+  DiscoveryEndpoint,
+  AgentDID,
+  AgentAttestation,
+  AgentIdentityConfig,
+  KYAProfile,
 } from "./types/index.js";
 
 // Error classes (value exports — usable with instanceof)

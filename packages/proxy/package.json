@@ -1,0 +1,58 @@
+{
+  "name": "@openagentpay/proxy",
+  "version": "0.1.0",
+  "description": "Zero-code reverse proxy that wraps any upstream API with 402 payment gating",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "openagentpay-proxy": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "openagentpay",
+    "payment",
+    "proxy",
+    "payment-gating",
+    "reverse-proxy",
+    "402",
+    "ai-agents"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAgentPay/OpenAgentPay",
+    "directory": "packages/proxy"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@openagentpay/server-hono": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@openagentpay/server-hono": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

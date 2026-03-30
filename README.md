@@ -24,13 +24,13 @@ OpenAgentPay is a **payment orchestration layer** for machine-to-machine commerc
       │                            │                                │
       └────────────────────────────┼────────────────────────────────┘
                                    │
-              ┌────────┬───────────┼───────────┬────────┐
-              │        │           │           │        │
-           ┌──▼──┐  ┌──▼──┐  ┌────▼───┐  ┌───▼──┐  ┌──▼────┐
-           │ MPP │  │x402 │  │  Visa  │  │Stripe│  │Credits│
-           │     │  │USDC │  │AgentCrd│  │PayPal│  │ Mock  │
-           │Tempo│  │Base │  │  MCP   │  │ UPI  │  │       │
-           └─────┘  └─────┘  └────────┘  └──────┘  └───────┘
+        ┌───────┬──────┬───────────┼───────────┬──────┬───────┐
+        │       │      │           │           │      │       │
+     ┌──▼──┐ ┌─▼──┐ ┌─▼───┐ ┌────▼───┐ ┌───▼──┐ ┌─▼────┐ ┌▼──────┐
+     │ MPP │ │x402│ │Solna│ │  Visa  │ │Stripe│ │Lghtn.│ │Credits│
+     │     │ │USDC│ │ SPL │ │AgentCrd│ │PayPal│ │BOLT11│ │ Mock  │
+     │Tempo│ │Base│ │     │ │  MCP   │ │ UPI  │ │      │ │       │
+     └─────┘ └────┘ └─────┘ └────────┘ └──────┘ └──────┘ └───────┘
 ```
 
 ---
@@ -92,12 +92,14 @@ The client SDK handles:
 - Automatic retry with payment proof
 - Receipt collection
 
-**Payment proof headers are protocol-standard** — once the agent pays, the header it sends (`X-PAYMENT` for x402, `Authorization: MPP` for MPP, etc.) uses the native protocol format. The server-side adapter verifies it against the real payment processor.
+**Payment proof headers are protocol-standard** — once the agent pays, the header it sends uses the native protocol format. The server-side adapter verifies it against the real payment processor.
 
 | Protocol | Payment header sent by agent | Verified by |
 |----------|----------------------------|-------------|
 | MPP | `Authorization: MPP <credential>` | Tempo RPC / Stripe API |
 | x402 | `X-PAYMENT: <base64 EIP-3009>` | x402 facilitator |
+| Solana | `X-SOLANA-PAYMENT: <base64 proof>` | Solana RPC |
+| Lightning | `X-LIGHTNING-PAYMENT: <base64 proof>` | LND REST API |
 | Visa | `X-VISA-TOKEN: <tokenized card>` | Visa MCP / payment gateway |
 | Stripe | `X-STRIPE-SESSION: <intent ID>` | Stripe REST API |
 | PayPal | `X-PAYPAL-ORDER: <order ID>` | PayPal REST API |
@@ -118,6 +120,8 @@ const paywall = createPaywall({
   adapters: [
     mpp({ networks: ['tempo', 'stripe'] }),    // MPP agents
     x402({ network: 'base' }),                  // x402 agents
+    solana({ rpcUrl: '...' }),                  // Solana SPL agents
+    lightning({ nodeUrl: '...' }),              // Lightning agents
     visa(),                                      // Visa agents
     stripe({ secretKey: '...' }),               // Stripe agents
     credits({ store }),                         // Prepaid credit agents
@@ -151,7 +155,7 @@ const router = createRouter({
 | `lowest-latency` | Fastest response time |
 | `round-robin` | Even distribution |
 | `weighted` | Probabilistic (A/B testing) |
-| `smart` | Composite: success × 0.5 + cost × 0.3 + latency × 0.2 |
+| `smart` | Composite: success x 0.5 + cost x 0.3 + latency x 0.2 |
 | `adaptive` | Multi-armed bandit (10% exploration, 90% exploit) |
 | `conditional` | Rule-based if/else routing |
 | `amount-tiered` | Different strategy per amount range |
@@ -187,7 +191,27 @@ app.use(paywall.routes());
 
 Active subscriptions use `X-SUBSCRIPTION` header — no per-call payment.
 
-### 5. Receipts and observability
+### 5. Service discovery
+
+Expose your API's payment capabilities so agents can discover pricing programmatically:
+
+```typescript
+import { discoveryMiddleware } from '@openagentpay/server-express';
+
+app.use(discoveryMiddleware({
+  version: '1.0',
+  provider: 'My API',
+  methods: ['mpp', 'x402', 'solana'],
+  currencies: ['USD', 'USDC'],
+  endpoints: [
+    { path: '/api/search', methods: ['GET'], pricing: { amount: '0.01', currency: 'USD', unit: 'per_request' } },
+  ],
+  capabilities: { subscriptions: true, streaming: true, sessions: true, receipts: true },
+}));
+// GET /.well-known/agent-pay → machine-readable discovery document
+```
+
+### 6. Receipts and observability
 
 Every payment generates a structured `AgentPaymentReceipt` — same schema regardless of payment method.
 
@@ -215,7 +239,7 @@ paywall.on('payment:received', (receipt) => {
 });
 ```
 
-### 6. Dynamic pricing
+### 7. Dynamic pricing
 
 ```typescript
 // Static
@@ -228,39 +252,95 @@ app.post('/api/process', paywall((req) => ({
 })), handler);
 ```
 
+### 8. Zero-code payment proxy
+
+Wrap any existing API with payment gating — no code changes to the upstream service:
+
+```typescript
+import { createProxy } from '@openagentpay/proxy';
+
+const proxy = createProxy({
+  upstream: 'https://internal-api.example.com',
+  pricing: { amount: '0.01', currency: 'USD' },
+  recipient: '0xYourWallet',
+  freePaths: ['/health', '/docs/*'],
+});
+
+await proxy.start(3000);
+// All requests to port 3000 now require payment (except /health, /docs/*)
+```
+
+### 9. Tax awareness
+
+Automatic tax calculation and reporting for agent transactions:
+
+```typescript
+import { createCalculator, createReporter } from '@openagentpay/tax';
+
+const tax = createCalculator({ defaultJurisdiction: 'US-CA' });
+const calc = tax.calculate('10.00', 'USD', 'stripe', 'US-CA');
+// { grossAmount: '10.00', taxAmount: '0.73', netAmount: '10.73', taxRate: 0.0725 }
+
+const reporter = createReporter({ defaultJurisdiction: 'US-CA' });
+reporter.addTransaction(receipt);
+const report = reporter.generateReport({ from: '2026-01-01', to: '2026-03-31' });
+const csv = reporter.exportCSV(report);
+```
+
 ---
 
-## All 18 packages
+## All 26 packages
 
-### Server-side (API owner installs)
+### Core
 
 | Package | What it does |
 |---------|-------------|
-| `core` | Types, schemas, builders, parsers, 10 error classes. Zero deps. Foundation for both sides. |
+| `core` | Types, schemas, builders, parsers, error classes. Zero deps. Foundation for everything. |
 | `router` | 14 routing strategies, health tracking, cost estimation, cascade failover. |
-| `server-express` | Express paywall middleware + subscription endpoints. |
-| `server-hono` | Hono paywall middleware + subscription endpoints. |
-| `adapter-mpp` | MPP protocol — Tempo, Stripe SPT, Lightning. Sessions. |
-| `adapter-x402` | x402 protocol — USDC on Base via EIP-3009 + facilitator. |
-| `adapter-visa` | Visa MCP + AgentCard virtual debit cards. |
-| `adapter-stripe` | Stripe PaymentIntents + credit bridge via Checkout. |
-| `adapter-paypal` | PayPal Orders + credit bridge. OAuth2. |
-| `adapter-upi` | UPI AutoPay mandates via Razorpay/Cashfree. |
-| `adapter-credits` | Prepaid balance with atomic deductions. |
-| `adapter-mock` | Simulated payments for development/testing. |
-| `receipts` | Receipt storage (memory/file), query, CSV/JSON export. |
-| `mcp` | `paidTool()` — wrap MCP tool handlers with payment verification. |
-| `vault` | Credential vault — encrypted storage for agent payment credentials. |
-| `otel-exporter` | OpenTelemetry spans + metrics. |
+| `policy` | Spend governance engine — 12 rules including identity-required, budgets, domain globs. |
+| `client` | `withPayment(fetch)` — parses unified 402, selects method, pays, retries, collects receipts. |
 
-### Agent-side (agent installs)
+### Server frameworks
 
 | Package | What it does |
 |---------|-------------|
-| `client` | `withPayment(fetch)` — parses unified 402, selects method, pays, retries, collects receipts. |
-| `policy` | Spend governance engine — 11 rules, budgets, domain globs. Used by client internally. |
-| `mcp` | `withMCPPayment()` — wraps MCP client to handle paid tool invocations transparently. |
-| Wallet adapters | Same adapter packages as server — `adapter-mpp`, `adapter-x402`, etc. provide client-side `pay()` + `supports()`. |
+| `server-express` | Express paywall middleware + subscription endpoints + service discovery. |
+| `server-hono` | Hono paywall middleware + subscription endpoints + service discovery. |
+| `server-cloudflare` | Cloudflare Workers paywall handler + KV receipt storage. |
+| `proxy` | Zero-code reverse proxy — wrap any API with 402 payment gating. |
+
+### Payment adapters (10)
+
+| Package | Protocol | Networks |
+|---------|----------|----------|
+| `adapter-mpp` | MPP (Machine Payments Protocol) | Tempo, Stripe, Lightning. Sessions + streaming. |
+| `adapter-x402` | x402 (EIP-3009) | USDC on Base / Base Sepolia. Production secp256k1 ECDSA signing. |
+| `adapter-solana` | Solana SPL tokens | USDC on Solana mainnet / devnet. Ed25519 signing. |
+| `adapter-lightning` | Lightning Network | BOLT11 invoices via LND REST. Preimage verification. |
+| `adapter-visa` | Visa Intelligent Commerce | Visa MCP + AgentCard virtual debit cards. |
+| `adapter-stripe` | Stripe | PaymentIntents + credit bridge via Checkout. |
+| `adapter-paypal` | PayPal | Orders API + credit bridge. OAuth2. |
+| `adapter-upi` | UPI (India) | Reserve Pay (SBMD), AutoPay mandates, QR codes, refunds, webhooks. Razorpay + Cashfree. |
+| `adapter-credits` | Prepaid credits | Atomic deductions from in-memory or persistent balance. |
+| `adapter-mock` | Mock | Simulated payments for development and testing. |
+
+### Infrastructure
+
+| Package | What it does |
+|---------|-------------|
+| `receipts` | Receipt storage (memory/file), query, CSV/JSON export. |
+| `vault` | Credential vault + agent identity (DIDs, Ed25519 attestations, KYA profiles). |
+| `otel-exporter` | OpenTelemetry spans + metrics. |
+| `tax` | Tax calculator (US/EU/India/Japan/Singapore), reporter, CSV export, capital gains. |
+| `cli` | CLI tool: `agentpay probe`, `pay`, `receipt`, `discover`, `simulate`. |
+
+### Integrations
+
+| Package | What it does |
+|---------|-------------|
+| `mcp` | `paidTool()` — wrap MCP tool handlers with payment verification. |
+| `mcp-mpp` | MCP-to-MPP bridge — discover and pay for MCP tools via MPP protocol. |
+| `razorpay-mcp` | Razorpay MCP server client — 48+ payment tools via JSON-RPC 2.0. |
 
 ---
 
@@ -270,12 +350,64 @@ app.post('/api/process', paywall((req) => ({
 |--------|-----------|-------------|-----------|---------------------|
 | MPP (Tempo) | ~$0.001 | ~$0.001 | Instant | `@openagentpay/adapter-mpp` |
 | x402 (USDC) | ~$0.001 | ~$0.001 | ~200ms | `@openagentpay/adapter-x402` |
+| Solana (SPL) | ~$0.001 | ~$0.001 | ~400ms | `@openagentpay/adapter-solana` |
+| Lightning | ~1 sat | ~1 sat | Instant | `@openagentpay/adapter-lightning` |
 | Visa MCP | ~$1.00 | Card rates | 1-3 days | `@openagentpay/adapter-visa` |
 | AgentCard | $1.00 | Card rates | 1-3 days | `@openagentpay/adapter-visa` |
 | Stripe | $0.50 | 2.9%+$0.30 | 2-7 days | `@openagentpay/adapter-stripe` |
 | PayPal | ~$1.00 | 3.49%+$0.49 | 1-3 days | `@openagentpay/adapter-paypal` |
 | UPI | Rs 1 | ~0% | T+1 | `@openagentpay/adapter-upi` |
+| UPI Reserve Pay | Rs 1 | ~0% | T+1 | `@openagentpay/adapter-upi` |
 | Credits | $0.001 | $0 | Instant | `@openagentpay/adapter-credits` |
+
+---
+
+## UPI Reserve Pay (agentic payments)
+
+OpenAgentPay supports NPCI's UPI Reserve Pay (SBMD — Single Block Multi Debit), the UPI-native framework for AI agent payments:
+
+```typescript
+import { UPIReservePayManager } from '@openagentpay/adapter-upi';
+
+const reservePay = new UPIReservePayManager({
+  gateway: 'razorpay',
+  apiKey: 'rzp_live_...',
+  apiSecret: 'secret_...',
+});
+
+// Agent authorizes a Rs 5,000 spending limit (90-day max)
+const block = await reservePay.createBlock({
+  payerIdentifier: 'agent-1',
+  amount: 500_000,       // Rs 5,000 in paise
+  description: 'API usage budget',
+  expiryDays: 30,
+});
+// → { blockId, authUrl, expiresAt }
+
+// After user authorizes via UPI app, debit freely without PIN/OTP
+const debit = await reservePay.executeDebit(block.blockId, 1000, 'API call');
+// → { transactionId, amount: 1000, remainingAmount: 499000 }
+```
+
+Razorpay MCP server integration for AI agent frameworks:
+
+```typescript
+import { createRazorpayMCP } from '@openagentpay/razorpay-mcp';
+
+const rzp = createRazorpayMCP({
+  apiKeyId: 'rzp_live_...',
+  apiKeySecret: 'secret_...',
+});
+
+// Use Razorpay's 48+ MCP tools
+const link = await rzp.tools.createPaymentLink({
+  amount: 50000, currency: 'INR',
+  description: 'API credits', upiLink: true,
+});
+
+// Verify payment
+const payment = await rzp.verifyPayment('pay_...', '500.00');
+```
 
 ---
 
@@ -294,19 +426,119 @@ const search = paidTool({
 });
 ```
 
+Bridge MCP tools with MPP for discovery and payment:
+
+```typescript
+import { createBridge, createDiscovery } from '@openagentpay/mcp-mpp';
+
+const bridge = createBridge({
+  recipient: '0x...',
+  mppConfig: { networks: ['tempo', 'stripe'] },
+  defaultPricing: { amount: '0.01', currency: 'USD' },
+});
+
+bridge.registerTool('search', schema, handler, { amount: '0.02', currency: 'USD' });
+const catalog = createDiscovery(bridge).describeTools();
+// → JSON-LD catalog of paid tools with pricing
+```
+
+---
+
+## Agent identity and compliance
+
+Verifiable agent identity via DIDs and Ed25519 attestations:
+
+```typescript
+import { AgentIdentityManager } from '@openagentpay/vault';
+
+const identity = new AgentIdentityManager({
+  privateKey: '0xabc...',  // Ed25519 seed
+  label: 'my-agent',
+});
+
+const did = identity.getDID();           // did:key:z6Mk...
+const attestation = identity.createAttestation(
+  did, 'payment-authorization',
+  { maxSpend: '100.00', allowedDomains: ['api.example.com'] }
+);
+
+// KYA (Know Your Agent) compliance profile
+const kya = identity.buildKYAProfile('MyAgent', 'MyCompany', ['payments', 'data-access']);
+```
+
+---
+
+## CLI tool
+
+```bash
+# Probe an endpoint for pricing
+agentpay probe https://api.example.com/data
+
+# Discover payment capabilities
+agentpay discover https://api.example.com
+
+# Simulate 100 requests and see stats
+agentpay simulate https://api.example.com/data --count 100
+
+# Parse a receipt
+agentpay receipt ./receipt.json
+```
+
 ---
 
 ## Getting paid
 
 OpenAgentPay is not a payment processor. Money flows directly from agent to API owner through the payment rail:
 
-- **x402**: USDC → directly to your wallet on Base
+- **x402**: USDC to your wallet on Base
 - **MPP**: settlement via Tempo/Stripe depending on network
+- **Solana**: SPL tokens to your Solana address
+- **Lightning**: sats to your Lightning node
 - **Stripe/PayPal**: settlement to your Stripe/PayPal account
-- **UPI**: settlement to your bank account
+- **UPI**: settlement to your bank account (T+1 via NPCI)
 - **Credits**: you already hold the money (prepaid)
 
 See [Getting Paid Guide](./docs/getting-paid.md) and [Fiat Payment Methods](./docs/fiat-payment-methods.md).
+
+---
+
+## Deployment options
+
+### Express / Node.js
+
+```typescript
+import { createPaywall } from '@openagentpay/server-express';
+```
+
+### Hono (Bun, Deno, Node.js)
+
+```typescript
+import { createPaywall } from '@openagentpay/server-hono';
+```
+
+### Cloudflare Workers
+
+```typescript
+import { createPaywallHandler } from '@openagentpay/server-cloudflare';
+
+export default {
+  fetch: createPaywallHandler({
+    pricing: { amount: '0.01', currency: 'USD' },
+    recipient: '0x...',
+    adapters: [mpp({ ... })],
+  }, {
+    handler: async (request) => new Response('Premium data'),
+  }),
+};
+```
+
+### Zero-code proxy
+
+```typescript
+import { createProxy } from '@openagentpay/proxy';
+const proxy = createProxy({ upstream: 'https://your-api.com', ... });
+await proxy.start(3000);
+```
 
 ---
 
@@ -329,14 +561,14 @@ cd examples/end-to-end-demo && pnpm start      # Full flow in one script
 | [Smart Router](./docs/smart-router.md) | 14 strategies, health tracking, cascade, cost estimation |
 | [Server SDK](./docs/server-sdk.md) | Middleware, pricing, subscriptions, events |
 | [Client SDK](./docs/client-sdk.md) | Optional agent-side client for policy + multi-method |
-| [Payment Adapters](./docs/payment-adapters.md) | All 8 adapters + custom adapter guide |
-| [MPP Integration](./docs/mpp-integration.md) | MPP protocol, sessions, Tempo/Stripe/Lightning |
+| [Payment Adapters](./docs/payment-adapters.md) | All 10 adapters + custom adapter guide |
+| [MPP Integration](./docs/mpp-integration.md) | MPP protocol, sessions, streaming, IETF Payment auth |
 | [Visa Integration](./docs/visa-integration.md) | Visa MCP, AgentCard |
 | [Fiat Methods](./docs/fiat-payment-methods.md) | Stripe/PayPal/UPI architecture + fees |
 | [Getting Paid](./docs/getting-paid.md) | Wallet setup, fiat conversion, tax |
-| [Policy Engine](./docs/policy-engine.md) | 11 rules, domain globs, spend tracking |
+| [Policy Engine](./docs/policy-engine.md) | 12 rules, domain globs, identity, spend tracking |
 | [Receipts](./docs/receipts.md) | Storage, querying, export |
-| [MCP Tools](./docs/mcp-integration.md) | Paid MCP tools |
+| [MCP Tools](./docs/mcp-integration.md) | Paid MCP tools, MCP-MPP bridge |
 
 ## Specifications
 
@@ -353,7 +585,7 @@ cd OpenAgentPay
 pnpm install && pnpm build && pnpm test
 ```
 
-18 packages · 106 TypeScript files · 21,000+ lines
+26 packages · 155 TypeScript source files · 68,000+ lines · 172 tests
 TypeScript · Turborepo · pnpm · Biome · Vitest · Apache 2.0
 
 ## Contributing

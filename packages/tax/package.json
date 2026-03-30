@@ -1,0 +1,50 @@
+{
+  "name": "@openagentpay/tax",
+  "version": "0.1.0",
+  "description": "Tax calculation awareness for AI agent transactions — sales tax, capital gains estimation, and tax reporting",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@openagentpay/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "ai-agents",
+    "payments",
+    "tax",
+    "sales-tax",
+    "capital-gains",
+    "compliance"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openagentpay/openagentpay",
+    "directory": "packages/tax"
+  }
+}

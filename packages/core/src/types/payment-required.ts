@@ -113,6 +113,38 @@ export interface MPPPaymentMethod {
   sessions_supported?: boolean;
 }
 
+/** Solana SPL token payment method — direct on-chain token transfers. */
+export interface SolanaPaymentMethod {
+  /** Discriminator — always `"solana"` for Solana SPL token payments. */
+  type: 'solana';
+  /** Solana JSON-RPC URL for transaction submission and verification. */
+  rpc_url: string;
+  /** SPL token mint address (e.g. USDC on Solana). */
+  token_mint: string;
+  /** Token symbol (e.g. `"USDC"`). */
+  token_symbol: string;
+  /** Token decimals (e.g. `6` for USDC). */
+  decimals: number;
+  /** Recipient Solana wallet address (base58-encoded). */
+  pay_to: string;
+}
+
+/** Lightning Network BOLT11 payment method — instant micropayments via payment channels. */
+export interface LightningPaymentMethod {
+  /** Discriminator — always `"lightning"` for Lightning Network payments. */
+  type: 'lightning';
+  /** BOLT11-encoded payment request (invoice) string. */
+  payment_request: string;
+  /** Payment hash (hex-encoded, 32 bytes). */
+  r_hash: string;
+  /** Invoice amount in satoshis. */
+  amount_sats: number;
+  /** ISO 8601 expiration timestamp for the invoice. */
+  expires_at: string;
+  /** Public key of the recipient Lightning node (hex-encoded). */
+  node_pubkey?: string;
+}
+
 /** Visa Intelligent Commerce payment method — via Visa MCP or AgentCard. */
 export interface VisaPaymentMethod {
   /** Discriminator — always `"visa"` for Visa payments. */
@@ -140,6 +172,8 @@ export type PaymentMethod =
   | PayPalPaymentMethod
   | UPIPaymentMethod
   | MPPPaymentMethod
+  | SolanaPaymentMethod
+  | LightningPaymentMethod
   | VisaPaymentMethod;
 
 // ---------------------------------------------------------------------------

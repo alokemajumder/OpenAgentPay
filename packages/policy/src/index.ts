@@ -40,6 +40,7 @@ export { PolicyEngine } from "./engine.js";
 export type { PaymentRequest } from "./engine.js";
 export { SpendTracker } from "./spend-tracker.js";
 export { globMatch, globMatchAny } from "./glob.js";
+export { evaluateIdentityRequired, identityRequiredRule } from "./rules/identity-rules.js";
 
 /**
  * Create a new policy engine with the given configuration.

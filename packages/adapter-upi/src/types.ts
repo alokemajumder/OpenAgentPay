@@ -183,3 +183,280 @@ export interface UPICreditBridgeConfig {
    */
   sandbox?: boolean
 }
+
+// ---------------------------------------------------------------------------
+// Webhook Verifier Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the {@link UPIWebhookVerifier}.
+ *
+ * @example
+ * ```typescript
+ * const config: WebhookVerifierConfig = {
+ *   gateway: 'razorpay',
+ *   webhookSecret: 'whsec_...',
+ * }
+ * ```
+ */
+export interface WebhookVerifierConfig {
+  /**
+   * Payment gateway provider whose webhook signatures to verify.
+   */
+  gateway: 'razorpay' | 'cashfree' | 'generic'
+
+  /**
+   * Webhook secret used for HMAC signature verification.
+   */
+  webhookSecret: string
+}
+
+/**
+ * Parsed and verified webhook event.
+ */
+export interface WebhookEvent {
+  /** Unique event identifier. */
+  id: string
+
+  /** Event type (e.g. 'payment.captured', 'refund.processed'). */
+  event: string
+
+  /** Event payload from the gateway. */
+  payload: Record<string, unknown>
+
+  /** Whether the signature was verified successfully. */
+  verified: boolean
+
+  /** ISO 8601 timestamp of the event. */
+  timestamp: string
+}
+
+// ---------------------------------------------------------------------------
+// UPI QR Code Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the {@link UPIQRCodeManager}.
+ *
+ * @example
+ * ```typescript
+ * const config: UPIQRConfig = {
+ *   gateway: 'razorpay',
+ *   apiKey: 'rzp_live_...',
+ *   apiSecret: 'secret_...',
+ * }
+ * ```
+ */
+export interface UPIQRConfig {
+  /**
+   * Payment gateway provider.
+   */
+  gateway: 'razorpay' | 'cashfree' | 'generic'
+
+  /**
+   * API key for the payment gateway.
+   */
+  apiKey: string
+
+  /**
+   * API secret for the payment gateway.
+   */
+  apiSecret: string
+
+  /**
+   * Whether to use the sandbox/test environment.
+   * @default false
+   */
+  sandbox?: boolean
+}
+
+/**
+ * Result of creating or querying a UPI QR code.
+ */
+export interface QRCodeResult {
+  /** QR code identifier from the gateway. */
+  qrId: string
+
+  /** URL to the QR code image. */
+  qrCodeUrl: string
+
+  /** Raw QR data string for custom rendering. */
+  qrData?: string
+
+  /** Amount in paise. */
+  amount: number
+
+  /** ISO 8601 expiry timestamp. */
+  expiresAt?: string
+
+  /** Current status of the QR code (e.g. 'active', 'closed', 'paid'). */
+  status: string
+}
+
+// ---------------------------------------------------------------------------
+// UPI Refund Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the {@link UPIRefundManager}.
+ *
+ * @example
+ * ```typescript
+ * const config: UPIRefundConfig = {
+ *   gateway: 'razorpay',
+ *   apiKey: 'rzp_live_...',
+ *   apiSecret: 'secret_...',
+ * }
+ * ```
+ */
+export interface UPIRefundConfig {
+  /**
+   * Payment gateway provider.
+   */
+  gateway: 'razorpay' | 'cashfree' | 'generic'
+
+  /**
+   * API key for the payment gateway.
+   */
+  apiKey: string
+
+  /**
+   * API secret for the payment gateway.
+   */
+  apiSecret: string
+
+  /**
+   * Whether to use the sandbox/test environment.
+   * @default false
+   */
+  sandbox?: boolean
+}
+
+/**
+ * Result of creating or querying a refund.
+ */
+export interface RefundResult {
+  /** Refund identifier from the gateway. */
+  refundId: string
+
+  /** Original payment identifier. */
+  paymentId: string
+
+  /** Refund amount in paise. */
+  amount: number
+
+  /** Current refund status (e.g. 'processed', 'pending', 'failed'). */
+  status: string
+
+  /** ISO 8601 timestamp when the refund was created. */
+  createdAt: string
+}
+
+// ---------------------------------------------------------------------------
+// UPI Reserve Pay (SBMD) Configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the {@link UPIReservePayManager}.
+ *
+ * UPI Reserve Pay (Single Block Multi Debit) lets a payer set a spending
+ * limit once (up to Rs 10,000 for 90 days). Agents can then make multiple
+ * debits without UPI PIN/OTP per transaction. Funds are blocked upfront
+ * in the payer's bank account.
+ *
+ * @example
+ * ```typescript
+ * const config: UPIReservePayConfig = {
+ *   gateway: 'razorpay',
+ *   apiKey: 'rzp_live_...',
+ *   apiSecret: 'secret_...',
+ * }
+ * ```
+ */
+export interface UPIReservePayConfig {
+  /**
+   * Payment gateway provider.
+   */
+  gateway: 'razorpay' | 'cashfree' | 'generic'
+
+  /**
+   * API key for the payment gateway.
+   */
+  apiKey: string
+
+  /**
+   * API secret for the payment gateway.
+   */
+  apiSecret: string
+
+  /**
+   * Whether to use the sandbox/test environment.
+   * @default false
+   */
+  sandbox?: boolean
+}
+
+/**
+ * Represents a UPI Reserve Pay (SBMD) block.
+ *
+ * A block is a budget envelope: funds are blocked upfront in the payer's
+ * account and the agent can make multiple debits against it without
+ * requiring UPI PIN/OTP for each transaction.
+ */
+export interface ReservePayBlock {
+  /** Unique block identifier. */
+  blockId: string
+
+  /** Payer's UPI VPA (e.g. "user@upi"). */
+  payerVPA: string
+
+  /** Agent or account identifier that owns this block. */
+  payerIdentifier: string
+
+  /** Total amount blocked in paise (max 1,000,000 = Rs 10,000). */
+  totalAmount: number
+
+  /** Amount already debited in paise. */
+  spentAmount: number
+
+  /** Remaining available amount in paise. */
+  remainingAmount: number
+
+  /** Currency code (ISO 4217). */
+  currency: string
+
+  /** Current block status. */
+  status: 'created' | 'authorized' | 'active' | 'exhausted' | 'expired' | 'cancelled'
+
+  /** ISO 8601 expiry timestamp. */
+  expiresAt: string
+
+  /** ISO 8601 creation timestamp. */
+  createdAt: string
+
+  /** Number of debits executed against this block. */
+  transactionCount: number
+
+  /** ISO 8601 timestamp of the last debit, if any. */
+  lastDebitAt?: string
+}
+
+/**
+ * Result of executing a debit against a Reserve Pay block.
+ */
+export interface ReservePayDebitResult {
+  /** Unique transaction identifier for this debit. */
+  transactionId: string
+
+  /** Amount debited in paise. */
+  amount: number
+
+  /** Remaining available amount in paise after this debit. */
+  remainingAmount: number
+
+  /** Transaction status. */
+  status: string
+
+  /** ISO 8601 timestamp of the debit. */
+  timestamp: string
+}

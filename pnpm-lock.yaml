@@ -109,6 +109,19 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
 
+  packages/adapter-lightning:
+    dependencies:
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
   packages/adapter-mock:
     dependencies:
       '@openagentpay/core':
@@ -140,6 +153,19 @@ importers:
       '@openagentpay/adapter-credits':
         specifier: workspace:*
         version: link:../adapter-credits
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
+  packages/adapter-solana:
+    dependencies:
       '@openagentpay/core':
         specifier: workspace:*
         version: link:../core
@@ -209,6 +235,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
 
+  packages/cli:
+    dependencies:
+      '@openagentpay/client':
+        specifier: workspace:*
+        version: link:../client
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
   packages/client:
     dependencies:
       '@openagentpay/core':
@@ -244,6 +286,25 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)
 
+  packages/mcp-mpp:
+    dependencies:
+      '@openagentpay/adapter-mpp':
+        specifier: workspace:*
+        version: link:../adapter-mpp
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+      '@openagentpay/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
   packages/otel-exporter:
     dependencies:
       '@openagentpay/core':
@@ -273,6 +334,38 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)
 
+  packages/proxy:
+    dependencies:
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+      '@openagentpay/server-hono':
+        specifier: workspace:*
+        version: link:../server-hono
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
+  packages/razorpay-mcp:
+    dependencies:
+      '@openagentpay/adapter-upi':
+        specifier: workspace:*
+        version: link:../adapter-upi
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
+
   packages/receipts:
     dependencies:
       '@openagentpay/core':
@@ -298,6 +391,19 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)
+
+  packages/server-cloudflare:
+    dependencies:
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
 
   packages/server-express:
     dependencies:
@@ -333,6 +439,19 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.5.0)
+
+  packages/tax:
+    dependencies:
+      '@openagentpay/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@25.5.0)(tsx@4.21.0)
 
   packages/vault:
     dependencies:

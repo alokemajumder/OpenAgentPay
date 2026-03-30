@@ -40,3 +40,5 @@ export type {
 } from './types.js';
 
 export { TypedEventEmitter } from './event-emitter.js';
+
+export { discoveryMiddleware } from './discovery.js';

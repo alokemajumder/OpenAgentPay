@@ -2,6 +2,9 @@
  * @module types
  *
  * Types for the MPP (Machine Payments Protocol) adapter.
+ *
+ * Aligned with the IETF draft `draft-ryan-httpauth-payment` and
+ * the official mpp-specs from Tempo/Stripe.
  */
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,9 @@ export interface MPPAdapterConfig {
   /** Whether MPP sessions are supported. Defaults to false. */
   sessionsSupported?: boolean;
 
+  /** Whether streaming payments are supported. Defaults to false. */
+  streamingSupported?: boolean;
+
   /** Tempo RPC URL for verifying on-chain payments. */
   tempoRpcUrl?: string;
 
@@ -32,6 +38,12 @@ export interface MPPAdapterConfig {
 
   /** Lightning node macaroon for authentication. */
   lightningMacaroon?: string;
+
+  /** Minimum session amount allowed. Defaults to '0.01'. */
+  minSessionAmount?: string;
+
+  /** Maximum session duration in hours. Defaults to 24. */
+  maxSessionDurationHours?: number;
 }
 
 /**
@@ -61,6 +73,15 @@ export interface MPPWalletConfig {
 
   /** Payer identifier (wallet address or account). */
   payerIdentifier?: string;
+
+  /** Whether to prefer sessions over per-call payments when available. */
+  preferSessions?: boolean;
+
+  /** Default session budget when auto-creating sessions. */
+  defaultSessionBudget?: string;
+
+  /** Default session duration when auto-creating sessions. */
+  defaultSessionDuration?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +92,8 @@ export interface MPPWalletConfig {
  * An MPP Challenge issued by a server in a 402 response.
  *
  * The Challenge tells the client what to pay, how much, and which
- * payment networks are accepted.
+ * payment networks are accepted. Follows the IETF `Payment` auth
+ * scheme challenge format.
  */
 export interface MPPChallenge {
   /** Protocol version. */
@@ -97,6 +119,12 @@ export interface MPPChallenge {
 
   /** Whether the server supports payment sessions. */
   sessionSupported?: boolean;
+
+  /** Whether the server supports streaming payments. */
+  streamingSupported?: boolean;
+
+  /** Resource URI being requested. */
+  resource?: string;
 
   /** Additional metadata from the server. */
   metadata?: Record<string, string>;
@@ -234,4 +262,99 @@ export interface MPPSessionChargeResult {
 export interface MPPSessionCloseResult {
   /** Amount refunded (remaining balance at close time). */
   refunded: string;
+}
+
+// ---------------------------------------------------------------------------
+// Streaming Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for a streaming payment — incremental charges during
+ * a long-running request (e.g., LLM token generation).
+ */
+export interface MPPStreamConfig {
+  /** Session ID to charge against. */
+  sessionId: string;
+
+  /** Amount per chunk/token as a decimal string (e.g., '0.0001'). */
+  amountPerChunk: string;
+
+  /** Maximum total amount for this stream. */
+  maxTotal?: string;
+
+  /** Currency code. */
+  currency: string;
+}
+
+/**
+ * A streaming payment meter that tracks incremental charges.
+ */
+export interface MPPStreamMeter {
+  /** Stream identifier. */
+  streamId: string;
+
+  /** Session being charged. */
+  sessionId: string;
+
+  /** Number of chunks charged. */
+  chunksCharged: number;
+
+  /** Total amount charged so far. */
+  totalCharged: string;
+
+  /** Whether the stream is still active. */
+  active: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// IETF Payment Auth Scheme Types
+// ---------------------------------------------------------------------------
+
+/**
+ * WWW-Authenticate header parameters for the MPP `Payment` scheme.
+ *
+ * Per IETF draft-ryan-httpauth-payment, the 402 response includes:
+ *   WWW-Authenticate: Payment realm="...", challenge="base64(...)"
+ */
+export interface MPPWWWAuthenticateParams {
+  /** Realm identifying the payment domain. */
+  realm: string;
+
+  /** Base64-encoded MPP challenge. */
+  challenge: string;
+
+  /** Comma-separated list of accepted networks. */
+  networks: string;
+
+  /** Whether sessions are available. */
+  sessions?: boolean;
+
+  /** Whether streaming is available. */
+  streaming?: boolean;
+}
+
+/**
+ * Payment-Receipt response header data.
+ *
+ * Per the IETF draft, successful payments include a receipt
+ * in the `Payment-Receipt` response header.
+ */
+export interface MPPPaymentReceiptHeader {
+  /** Receipt ID. */
+  id: string;
+
+  /** Amount settled. */
+  amount: string;
+
+  /** Currency. */
+  currency: string;
+
+  /** Network used. */
+  network: string;
+
+  /** Settlement status. */
+  status: 'settled' | 'pending';
+
+  /** Transaction reference. */
+  ref: string;
 }

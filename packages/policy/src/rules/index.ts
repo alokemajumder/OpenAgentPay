@@ -23,3 +23,4 @@ export {
   evaluateMaxSubscriptionPeriod,
 } from "./subscription-rules.js";
 export { evaluateApprovalThreshold, approvalThresholdRule } from "./approval-rules.js";
+export { evaluateIdentityRequired, identityRequiredRule } from "./identity-rules.js";

@@ -8,10 +8,14 @@ OpenAgentPay uses an adapter pattern for payment methods. Each adapter handles d
 |---------|---------|------|-----------------|
 | Mock | `@openagentpay/adapter-mock` | Simulated | Yes (testing only) |
 | Credits | `@openagentpay/adapter-credits` | Prepaid balance | Yes (zero per-call fees) |
-| x402 | `@openagentpay/adapter-x402` | USDC stablecoin | Yes (~$0.001 per call) |
+| MPP | `@openagentpay/adapter-mpp` | Multi-network (Tempo/Stripe/Lightning) | Yes (~$0.001 per call) |
+| x402 | `@openagentpay/adapter-x402` | USDC stablecoin (Base) | Yes (~$0.001 per call) |
+| Solana | `@openagentpay/adapter-solana` | SPL tokens (Solana) | Yes (~$0.001 per call) |
+| Lightning | `@openagentpay/adapter-lightning` | BOLT11 invoices (LND) | Yes (~1 sat per call) |
+| Visa | `@openagentpay/adapter-visa` | Visa MCP + AgentCard | Only above ~$1.00 |
 | Stripe | `@openagentpay/adapter-stripe` | Fiat (card) | Only above $0.50 |
 | PayPal | `@openagentpay/adapter-paypal` | Fiat (PayPal) | Only above ~$1.00 |
-| UPI | `@openagentpay/adapter-upi` | Fiat (India) | Via mandate aggregation |
+| UPI | `@openagentpay/adapter-upi` | Fiat (India) | Via Reserve Pay / mandate |
 
 ## Mock
 
@@ -185,9 +189,67 @@ Header: `X-PAYPAL-ORDER: <order_id>`
 
 PayPal verifies Order status via REST API (`GET /v2/checkout/orders/{id}`). Access tokens are cached and auto-refreshed.
 
+## Solana (SPL tokens)
+
+Solana SPL token payments. Agent signs a `transferChecked` instruction with Ed25519. Verified via Solana RPC.
+
+```typescript
+import { solana, solanaWallet } from '@openagentpay/adapter-solana';
+
+// Server
+const paywall = createPaywall({
+  recipient: 'YourSolanaAddress...',
+  adapters: [solana({
+    rpcUrl: 'https://api.mainnet-beta.solana.com',
+    supportedTokens: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],  // USDC
+    confirmationLevel: 'confirmed',
+  })],
+});
+
+// Client
+const wallet = solanaWallet({
+  privateKey: process.env.SOLANA_PRIVATE_KEY!,
+  rpcUrl: 'https://api.mainnet-beta.solana.com',
+  tokenMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  // USDC
+});
+```
+
+Header: `X-SOLANA-PAYMENT: <base64 proof with tx signature>`
+
+Supported networks: Solana mainnet-beta, devnet. Zero external dependencies — constructs transaction bytes and base58 encoding natively.
+
+## Lightning Network
+
+Lightning micropayments via BOLT11 invoices. Server creates invoices via LND REST, client pays and returns the preimage as proof.
+
+```typescript
+import { lightning, lightningWallet } from '@openagentpay/adapter-lightning';
+
+// Server
+const paywall = createPaywall({
+  recipient: 'node-pubkey',
+  adapters: [lightning({
+    nodeUrl: 'https://your-lnd-node:8080',
+    macaroon: process.env.LND_MACAROON!,
+    invoiceExpirySeconds: 600,
+  })],
+});
+
+// Client
+const wallet = lightningWallet({
+  nodeUrl: 'https://agent-lnd-node:8080',
+  macaroon: process.env.AGENT_LND_MACAROON!,
+  maxFeeSats: 10,
+});
+```
+
+Header: `X-LIGHTNING-PAYMENT: <base64 proof with preimage>`
+
+Verification: SHA-256(preimage) must equal the invoice's r_hash. Settlement confirmed via LND REST `/v1/invoice/{r_hash}`.
+
 ## UPI (India)
 
-Payments via UPI. AutoPay mandates for recurring charges. Near-zero fees for transactions under Rs 2,000.
+Payments via UPI. Supports Reserve Pay (SBMD) for agentic payments, AutoPay mandates for recurring charges, QR codes, refunds, and webhook verification. Near-zero fees for transactions under Rs 2,000.
 
 ```typescript
 import { upi, UPIAdapter, UPIMandateManager, UPICreditBridge } from '@openagentpay/adapter-upi';
@@ -230,6 +292,87 @@ await mandates.executeMandateDebit({
 Header: `X-UPI-REFERENCE: <transaction_reference>`
 
 Supported gateways: Razorpay (Basic Auth, amounts in paise), Cashfree (API key headers, amounts in INR decimal), generic (configurable).
+
+### UPI Reserve Pay (SBMD — agentic payments)
+
+NPCI's Single Block Multi Debit framework for AI agents. User authorizes a spending limit once; agents debit freely within the limit without per-transaction PIN/OTP.
+
+```typescript
+import { UPIReservePayManager } from '@openagentpay/adapter-upi';
+
+const reservePay = new UPIReservePayManager({
+  gateway: 'razorpay',
+  apiKey: process.env.RAZORPAY_KEY_ID!,
+  apiSecret: process.env.RAZORPAY_KEY_SECRET!,
+});
+
+// Create a spending block (max Rs 10,000 for up to 90 days)
+const block = await reservePay.createBlock({
+  payerIdentifier: 'agent-001',
+  amount: 500_000,         // Rs 5,000 in paise
+  description: 'API usage budget',
+  expiryDays: 30,
+});
+// → { blockId, authUrl, expiresAt }
+
+// After payer authorizes via UPI app:
+reservePay.activateBlock(block.blockId);
+
+// Debit freely without PIN/OTP
+await reservePay.executeDebit(block.blockId, 1000, 'API call');
+// → { transactionId, amount, remainingAmount, status }
+
+// Check status
+const status = await reservePay.getBlockStatus(block.blockId);
+// → { blockId, totalAmount, spentAmount, remainingAmount, status, transactionCount }
+
+// Cancel and release remaining funds
+await reservePay.cancelBlock(block.blockId);
+```
+
+Limits: Max Rs 10,000 (1,000,000 paise) per block, max 90-day expiry (per NPCI framework).
+
+### QR codes, refunds, and webhooks
+
+```typescript
+import { UPIQRCodeManager, UPIRefundManager, UPIWebhookVerifier } from '@openagentpay/adapter-upi';
+
+// QR code generation
+const qr = new UPIQRCodeManager({ gateway: 'razorpay', apiKey: '...', apiSecret: '...' });
+const code = await qr.createQR({ amount: 10000, description: 'API credits' });
+// → { qrId, qrCodeUrl, amount, status }
+
+// Refunds (full or partial)
+const refunds = new UPIRefundManager({ gateway: 'razorpay', apiKey: '...', apiSecret: '...' });
+await refunds.createRefund({ paymentId: 'pay_...', amount: 5000, reason: 'Unused credits' });
+
+// Webhook signature verification (timing-safe HMAC-SHA256)
+const verifier = new UPIWebhookVerifier({ gateway: 'razorpay', webhookSecret: 'whsec_...' });
+const event = verifier.parseEvent(rawBody, req.headers['x-razorpay-signature']);
+if (event.verified) { /* process event */ }
+```
+
+### Razorpay MCP server integration
+
+Use Razorpay's 48+ MCP tools through OpenAgentPay:
+
+```typescript
+import { createRazorpayMCP } from '@openagentpay/razorpay-mcp';
+
+const rzp = createRazorpayMCP({
+  apiKeyId: process.env.RAZORPAY_KEY_ID!,
+  apiKeySecret: process.env.RAZORPAY_KEY_SECRET!,
+});
+
+// Create UPI payment link
+const link = await rzp.tools.createPaymentLink({
+  amount: 50000, currency: 'INR',
+  description: 'API credits', upiLink: true,
+});
+
+// List available tools
+const tools = await rzp.getTools();
+```
 
 ## Using multiple adapters
 

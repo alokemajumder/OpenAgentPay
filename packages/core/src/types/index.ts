@@ -15,6 +15,8 @@ export type {
   PayPalPaymentMethod,
   UPIPaymentMethod,
   MPPPaymentMethod,
+  SolanaPaymentMethod,
+  LightningPaymentMethod,
   VisaPaymentMethod,
   SubscriptionPlan,
 } from "./payment-required.js";
@@ -52,6 +54,18 @@ export type {
   PolicyDecisionOutcome,
   PolicyRule,
 } from "./policy.js";
+
+export type {
+  AgentPayDiscovery,
+  DiscoveryEndpoint,
+} from "./discovery.js";
+
+export type {
+  AgentDID,
+  AgentAttestation,
+  AgentIdentityConfig,
+  KYAProfile,
+} from "./identity.js";
 
 export {
   OpenAgentPayError,

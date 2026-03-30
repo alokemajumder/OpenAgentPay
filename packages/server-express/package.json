@@ -46,5 +46,14 @@
     "express": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "homepage": "https://github.com/alokemajumder/OpenAgentPay#readme",
+  "bugs": {
+    "url": "https://github.com/alokemajumder/OpenAgentPay/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alokemajumder/OpenAgentPay",
+    "directory": "packages/server-express"
   }
 }

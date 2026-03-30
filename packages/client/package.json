@@ -45,7 +45,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/openagentpay/openagentpay",
+    "url": "https://github.com/alokemajumder/OpenAgentPay",
     "directory": "packages/client"
+  },
+  "homepage": "https://github.com/alokemajumder/OpenAgentPay#readme",
+  "bugs": {
+    "url": "https://github.com/alokemajumder/OpenAgentPay/issues"
   }
 }

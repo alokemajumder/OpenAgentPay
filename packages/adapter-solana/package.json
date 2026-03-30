@@ -33,7 +33,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/OpenAgentPay/OpenAgentPay",
+    "url": "https://github.com/alokemajumder/OpenAgentPay",
     "directory": "packages/adapter-solana"
   },
   "dependencies": {
@@ -42,5 +42,9 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "homepage": "https://github.com/alokemajumder/OpenAgentPay#readme",
+  "bugs": {
+    "url": "https://github.com/alokemajumder/OpenAgentPay/issues"
   }
 }

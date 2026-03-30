@@ -49,7 +49,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/openagentpay/openagentpay",
+    "url": "https://github.com/alokemajumder/OpenAgentPay",
     "directory": "packages/mcp-mpp"
+  },
+  "homepage": "https://github.com/alokemajumder/OpenAgentPay#readme",
+  "bugs": {
+    "url": "https://github.com/alokemajumder/OpenAgentPay/issues"
   }
 }
